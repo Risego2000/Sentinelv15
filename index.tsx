@@ -137,9 +137,9 @@ const App = () => {
   });
 
   const [inferParams, setInferParams] = useState({
-    confThreshold: 0.35,
-    detectionSkip: 4,
-    persistence: 45
+    confThreshold: 0.25,
+    detectionSkip: 2,
+    persistence: 60
   });
 
   const frameCounterRef = useRef(0);
@@ -1489,6 +1489,19 @@ const App = () => {
                   value={inferParams.persistence}
                   onChange={e => setInferParams(p => ({ ...p, persistence: parseInt(e.target.value) }))}
                   className="w-full h-1 bg-white/5 rounded-lg appearance-none cursor-pointer accent-purple-500"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex justify-between text-[10px] font-mono text-slate-400">
+                  <span className="flex items-center gap-2"><ActivitySquare size={10} /> SALTO_INFERENCIA</span>
+                  <span className="text-amber-400">{inferParams.detectionSkip} F</span>
+                </div>
+                <input
+                  type="range" min="1" max="10" step="1"
+                  value={inferParams.detectionSkip}
+                  onChange={e => setInferParams(p => ({ ...p, detectionSkip: parseInt(e.target.value) }))}
+                  className="w-full h-1 bg-white/5 rounded-lg appearance-none cursor-pointer accent-amber-500"
                 />
               </div>
 
