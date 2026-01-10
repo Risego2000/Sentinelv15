@@ -1113,8 +1113,12 @@ const App = () => {
         const lx = (det.bbox[0] / v.videoWidth) * 1000; const ly = (det.bbox[1] / v.videoHeight) * 1000;
         const lw = (det.bbox[2] / v.videoWidth) * 1000; const lh = (det.bbox[3] / v.videoHeight) * 1000;
         const cx = lx + lw / 2; const cy = ly + lh / 2;
-        const isDuplicate = tracksRef.current.some(t => calculateIoU([t.predictedX - t.w / 2, t.predictedY - t.h / 2, t.w, t.h], [lx, ly, lw, lh]) > 0.5);
-        if (!isDuplicate && lw > 15 && lh > 15) {
+        const isDuplicate = tracksRef.current.some(t => {
+          const iou = calculateIoU([t.predictedX - t.w / 2, t.predictedY - t.h / 2, t.w, t.h], [lx, ly, lw, lh]);
+          const dist = Math.sqrt(Math.pow(t.predictedX - cx, 2) + Math.pow(t.predictedY - cy, 2));
+          return iou > 0.3 || dist < 40;
+        });
+        if (!isDuplicate && lw > 20 && lh > 20) {
           setCumulativeDetections(prev => prev + 1);
           tracksRef.current.push({
             id: now + Math.floor(Math.random() * 1000), label: det.class, points: [{ x: cx, y: cy, time: now }],
@@ -1189,11 +1193,11 @@ const App = () => {
       if (track.isInfractor) {
         ctx.fillStyle = '#ef4444'; ctx.fillRect(cpX - bW / 2, cpY - bH / 2 - 20, bW, 20);
         ctx.fillStyle = '#fff'; ctx.font = 'bold 9px monospace';
-        ctx.fillText(`${track.subType} | ${speedKmh} KM/H`, cpX - bW / 2 + 5, cpY - bH / 2 - 7);
+        ctx.fillText(`ID:${track.id % 1000} | ${track.subType} | ${speedKmh} KM/H`, cpX - bW / 2 + 5, cpY - bH / 2 - 7);
       } else {
         ctx.fillStyle = track.color; ctx.fillRect(cpX - bW / 2, cpY - bH / 2 - 15, bW, 15);
         ctx.fillStyle = '#000'; ctx.font = 'bold 9px monospace';
-        ctx.fillText(`${track.label.toUpperCase()} | ${speedKmh} KM/H`, cpX - bW / 2 + 5, cpY - bH / 2 - 4);
+        ctx.fillText(`ID:${track.id % 1000} | ${track.label.toUpperCase()} | ${speedKmh} KM/H`, cpX - bW / 2 + 5, cpY - bH / 2 - 4);
       }
 
       if (track.label === 'person' && isOrtLoaded) {
