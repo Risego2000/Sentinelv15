@@ -1250,6 +1250,86 @@ const App = () => {
         </div>
 
         <div className="flex-1 p-6 space-y-8">
+          <div className="bg-slate-900/40 rounded-[32px] p-6 space-y-6 border border-white/5 shadow-2xl relative overflow-hidden group">
+            <div className="absolute inset-0 bg-gradient-to-br from-cyan-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
+            <h3 className="text-[11px] font-black text-cyan-500 uppercase tracking-[0.2em] flex items-center gap-2 italic">
+              <ActivitySquare size={14} className="animate-pulse" /> CONFIGURACIÓN NEURAL
+            </h3>
+
+            <div className="space-y-5">
+              <div className="space-y-2">
+                <div className="flex justify-between text-[10px] font-mono text-slate-400">
+                  <span className="flex items-center gap-2"><Target size={10} /> CONFIDENCIA_MIN</span>
+                  <span className="text-cyan-400">{Math.round(inferParams.confThreshold * 100)}%</span>
+                </div>
+                <input
+                  type="range" min="0.1" max="0.9" step="0.05"
+                  value={inferParams.confThreshold}
+                  onChange={e => setInferParams(p => ({ ...p, confThreshold: parseFloat(e.target.value) }))}
+                  className="w-full h-1 bg-white/5 rounded-lg appearance-none cursor-pointer accent-cyan-500"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex justify-between text-[10px] font-mono text-slate-400">
+                  <span className="flex items-center gap-2"><Clock size={10} /> PERSISTENCIA_TRAZA</span>
+                  <span className="text-purple-400">{inferParams.persistence} F</span>
+                </div>
+                <input
+                  type="range" min="5" max="150" step="5"
+                  value={inferParams.persistence}
+                  onChange={e => setInferParams(p => ({ ...p, persistence: parseInt(e.target.value) }))}
+                  className="w-full h-1 bg-white/5 rounded-lg appearance-none cursor-pointer accent-purple-500"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex justify-between text-[10px] font-mono text-slate-400">
+                  <span className="flex items-center gap-2"><ActivitySquare size={10} /> SALTO_INFERENCIA</span>
+                  <span className="text-amber-400">{inferParams.detectionSkip} F</span>
+                </div>
+                <input
+                  type="range" min="1" max="10" step="1"
+                  value={inferParams.detectionSkip}
+                  onChange={e => setInferParams(p => ({ ...p, detectionSkip: parseInt(e.target.value) }))}
+                  className="w-full h-1 bg-white/5 rounded-lg appearance-none cursor-pointer accent-amber-500"
+                />
+              </div>
+
+              <div className="space-y-3">
+                <div className="flex items-center justify-between p-3 rounded-2xl bg-black/40 border border-white/5">
+                  <span className="text-[9px] font-black text-slate-500 tracking-tighter uppercase whitespace-nowrap">ALGORITMO TRAQUEO</span>
+                  <div className="flex gap-1 bg-slate-950 p-1 rounded-xl">
+                    {['bytetrack', 'botsort'].map(m => (
+                      <button
+                        key={m}
+                        onClick={() => setTrackingMode(m as any)}
+                        className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all ${trackingMode === m ? 'bg-cyan-500 text-black shadow-[0_0_15px_#22d3ee]' : 'text-slate-600 hover:text-slate-400'}`}
+                      >
+                        {m}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <p className="px-4 text-[9px] text-slate-500 italic leading-tight animate-in fade-in duration-500">
+                  {trackingMode === 'bytetrack'
+                    ? "ByteTrack: Recupera objetos usando detecciones de baja confianza. Excelente para tráfico denso y oclusiones constantes."
+                    : "BoT-SORT: Integra compensación de movimiento y refinamiento ReID. Máxima estabilidad en cámaras dinámicas o con vibración."}
+                </p>
+              </div>
+
+              <div className="flex items-center justify-between p-3 rounded-2xl bg-cyan-950/20 border border-cyan-500/10">
+                <div className="flex items-center gap-3">
+                  <Fingerprint size={16} className={isOrtLoaded ? "text-cyan-500" : "text-slate-600"} />
+                  <div className="flex flex-col">
+                    <span className="text-[10px] font-black text-white leading-none">YOLOv11+POSE</span>
+                    <span className="text-[8px] font-mono text-cyan-500/60 uppercase">{isOrtLoaded ? "Ready_State" : "Loading_Core..."}</span>
+                  </div>
+                </div>
+                <div className={`w-2 h-2 rounded-full ${isOrtLoaded ? "bg-cyan-500 animate-pulse shadow-[0_0_8px_#22d3ee]" : "bg-slate-700"}`} />
+              </div>
+            </div>
+          </div>
 
           <div className="space-y-4">
             <div className="flex items-center justify-between">
@@ -1416,78 +1496,6 @@ const App = () => {
             </div>
           </div>
 
-          <div className="px-8 py-6 space-y-6 border-t border-white/5 bg-slate-900/15">
-            <h3 className="text-[11px] font-black text-cyan-500 uppercase tracking-[0.2em] flex items-center gap-2 italic">
-              <ActivitySquare size={14} className="animate-pulse" /> CONFIGURACIÓN NEURAL
-            </h3>
-
-            <div className="space-y-5">
-              <div className="space-y-2">
-                <div className="flex justify-between text-[10px] font-mono text-slate-400">
-                  <span className="flex items-center gap-2"><Target size={10} /> CONFIDENCIA_MIN</span>
-                  <span className="text-cyan-400">{Math.round(inferParams.confThreshold * 100)}%</span>
-                </div>
-                <input
-                  type="range" min="0.1" max="0.9" step="0.05"
-                  value={inferParams.confThreshold}
-                  onChange={e => setInferParams(p => ({ ...p, confThreshold: parseFloat(e.target.value) }))}
-                  className="w-full h-1 bg-white/5 rounded-lg appearance-none cursor-pointer accent-cyan-500"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <div className="flex justify-between text-[10px] font-mono text-slate-400">
-                  <span className="flex items-center gap-2"><Clock size={10} /> PERSISTENCIA_TRAZA</span>
-                  <span className="text-purple-400">{inferParams.persistence} F</span>
-                </div>
-                <input
-                  type="range" min="5" max="150" step="5"
-                  value={inferParams.persistence}
-                  onChange={e => setInferParams(p => ({ ...p, persistence: parseInt(e.target.value) }))}
-                  className="w-full h-1 bg-white/5 rounded-lg appearance-none cursor-pointer accent-purple-500"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <div className="flex justify-between text-[10px] font-mono text-slate-400">
-                  <span className="flex items-center gap-2"><ActivitySquare size={10} /> SALTO_INFERENCIA</span>
-                  <span className="text-amber-400">{inferParams.detectionSkip} F</span>
-                </div>
-                <input
-                  type="range" min="1" max="10" step="1"
-                  value={inferParams.detectionSkip}
-                  onChange={e => setInferParams(p => ({ ...p, detectionSkip: parseInt(e.target.value) }))}
-                  className="w-full h-1 bg-white/5 rounded-lg appearance-none cursor-pointer accent-amber-500"
-                />
-              </div>
-
-              <div className="flex items-center justify-between p-3 rounded-2xl bg-black/40 border border-white/5">
-                <span className="text-[9px] font-black text-slate-500 tracking-tighter uppercase whitespace-nowrap">ALGORITMO TRAQUEO</span>
-                <div className="flex gap-1 bg-slate-950 p-1 rounded-xl">
-                  {['bytetrack', 'botsort'].map(m => (
-                    <button
-                      key={m}
-                      onClick={() => setTrackingMode(m as any)}
-                      className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all ${trackingMode === m ? 'bg-cyan-500 text-black shadow-[0_0_15px_#22d3ee]' : 'text-slate-600 hover:text-slate-400'}`}
-                    >
-                      {m}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between p-3 rounded-2xl bg-cyan-950/20 border border-cyan-500/10">
-                <div className="flex items-center gap-3">
-                  <Fingerprint size={16} className={isOrtLoaded ? "text-cyan-500" : "text-slate-600"} />
-                  <div className="flex flex-col">
-                    <span className="text-[10px] font-black text-white leading-none">YOLOv11+POSE</span>
-                    <span className="text-[8px] font-mono text-cyan-500/60 uppercase">{isOrtLoaded ? "Ready_State" : "Loading_Core..."}</span>
-                  </div>
-                </div>
-                <div className={`w-2 h-2 rounded-full ${isOrtLoaded ? "bg-cyan-500 animate-pulse shadow-[0_0_8px_#22d3ee]" : "bg-slate-700"}`} />
-              </div>
-            </div>
-          </div>
 
           <div className="p-4 border-t border-white/5 bg-red-950/10">
             <div className="flex flex-col gap-2">
