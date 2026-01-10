@@ -1,0 +1,8 @@
+{
+  "description": "Sentinel V15: Advanced natural language traffic audit system with 10s video evidence capture and ordered forensic reporting powered by Gemini 3 Flash.",
+  "name": "SENTINEL.AI V15",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
