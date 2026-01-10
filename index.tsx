@@ -852,7 +852,12 @@ const App = () => {
     const loadModels = async () => {
       try {
         const baseUrl = import.meta.env.BASE_URL || '/';
-        const modelPath = (name: string) => `${baseUrl}upload/${name}`.replace(/\/+/g, '/');
+        // Construir ruta correctamente: /SENTINELV15/upload/model.onnx
+        const modelPath = (name: string) => {
+          const path = baseUrl.endsWith('/') ? `${baseUrl}upload/${name}` : `${baseUrl}/upload/${name}`;
+          console.log(`🔍 Model path for ${name}:`, path);
+          return path;
+        };
 
         console.log("Loading YOLOv11 Engine...");
         ortSessionRef.current = await ort.InferenceSession.create(modelPath('yolo11n_640.onnx'), {
@@ -1675,7 +1680,7 @@ const App = () => {
               </button>
               <div className="flex flex-col">
                 <span className="text-[11px] font-black text-slate-600 uppercase tracking-widest mb-1">Status de Feed</span>
-                <span className="text-xl font-black italic text-white/95 tracking-tighter uppercase whitespace-nowrap">
+                <span className="text-[16px] font-black italic text-white/95 tracking-tight uppercase whitespace-nowrap">
                   {source === 'live' ? 'Neural_Live_Feed' : source === 'upload' ? 'Forensic_Buffer' : 'System_Standby'}
                 </span>
               </div>
