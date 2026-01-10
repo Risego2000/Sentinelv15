@@ -1001,7 +1001,7 @@ const App = () => {
   };
 
   const processFrame = useCallback(async () => {
-    if (!videoRef.current || !canvasRef.current || !modelRef.current) return;
+    if (!videoRef.current || !canvasRef.current) return;
     const v = videoRef.current;
     const canvas = canvasRef.current;
     const ctx = canvas.getContext('2d');
