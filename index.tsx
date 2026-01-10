@@ -1348,6 +1348,11 @@ const App = () => {
                 </div>
                 <div className={`w-2 h-2 rounded-full ${isOrtLoaded ? "bg-cyan-500 animate-pulse shadow-[0_0_8px_#22d3ee]" : "bg-slate-700"}`} />
               </div>
+
+              <div className="flex flex-col gap-2 pt-2 border-t border-white/5">
+                <StatusBadge label="RADAR_ACTIVE" active={isPlaying} />
+                <StatusBadge label="AI_CORE_SYNC" active={isAnalyzing} color="red" pulse={isAnalyzing} />
+              </div>
             </div>
           </div>
 
@@ -1516,13 +1521,6 @@ const App = () => {
             </div>
           </div>
 
-
-          <div className="p-4 border-t border-white/5 bg-red-950/10">
-            <div className="flex flex-col gap-2">
-              <StatusBadge label="RADAR_ACTIVE" active={isPlaying} />
-              <StatusBadge label="AI_CORE_SYNC" active={isAnalyzing} color="red" pulse={isAnalyzing} />
-            </div>
-          </div>
         </div>
 
         <div className="p-6 border-t border-white/5 mt-auto">
