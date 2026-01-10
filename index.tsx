@@ -1154,7 +1154,7 @@ const App = () => {
         }
       });
 
-      // STAGE 3: New track initiation
+      // STAGE 3: New track initiation (con filtro anti-duplicados más estricto)
       highDets.forEach((det, dIdx) => {
         if (matchedDets.has(dIdx)) return;
         const lx = (det.bbox[0] / v.videoWidth) * 1000; const ly = (det.bbox[1] / v.videoHeight) * 1000;
@@ -1163,9 +1163,9 @@ const App = () => {
         const isDuplicate = tracksRef.current.some(t => {
           const iou = calculateIoU([t.predictedX - t.w / 2, t.predictedY - t.h / 2, t.w, t.h], [lx, ly, lw, lh]);
           const dist = Math.sqrt(Math.pow(t.predictedX - cx, 2) + Math.pow(t.predictedY - cy, 2));
-          return iou > 0.3 || dist < 40;
+          return iou > 0.5 || dist < 60;
         });
-        if (!isDuplicate && lw > 20 && lh > 20) {
+        if (!isDuplicate && lw > 30 && lh > 30) {
           setCumulativeDetections(prev => prev + 1);
           tracksRef.current.push({
             id: now + Math.floor(Math.random() * 1000), label: det.class, points: [{ x: cx, y: cy, time: now }],
@@ -1180,11 +1180,19 @@ const App = () => {
         const lastP = t.points[t.points.length - 1];
         const rawVx = (cx - lastP.x) / (deltaSeconds || 0.033);
         const rawVy = (cy - lastP.y) / (deltaSeconds || 0.033);
-        t.vx = t.vx * 0.6 + rawVx * 0.4; t.vy = t.vy * 0.6 + rawVy * 0.4;
-        t.points.push({ x: t.predictedX * 0.15 + cx * 0.85, y: t.predictedY * 0.15 + cy * 0.85, time: now });
-        t.w = t.w * 0.8 + lw * 0.2; t.h = t.h * 0.8 + lh * 0.2;
+        // Suavizado cinemático más agresivo para reducir jitter
+        t.vx = t.vx * 0.75 + rawVx * 0.25;
+        t.vy = t.vy * 0.75 + rawVy * 0.25;
+        // Predicción Kalman-like: más peso en predicción para suavidad
+        const smoothX = t.predictedX * 0.3 + cx * 0.7;
+        const smoothY = t.predictedY * 0.3 + cy * 0.7;
+        t.points.push({ x: smoothX, y: smoothY, time: now });
+        // Suavizado de dimensiones más agresivo
+        t.w = t.w * 0.85 + lw * 0.15;
+        t.h = t.h * 0.85 + lh * 0.15;
         t.lastSeen = now; t.age++; t.missedFrames = 0;
-        t.confidence = t.confidence * 0.7 + score * 0.3;
+        // Confianza con decay más lento para mantener tracks
+        t.confidence = Math.min(1.0, t.confidence * 0.85 + score * 0.15);
         const frameDisplacement = Math.sqrt(Math.pow(rawVx, 2) + Math.pow(rawVy, 2)) * (deltaSeconds || 0.033);
         const ppmAtPos = getPixelsPerMeterAtY(cy);
         // Velocidad instantánea en metros por intervalo de frame
@@ -1221,12 +1229,20 @@ const App = () => {
         }
       }
 
-      // Inter-inference smoothing glide
+      // Inter-inference smoothing glide (con predicción cinemática)
       const isInferenceFrame = frameCounterRef.current % inferParams.detectionSkip === 0;
       tracksRef.current.forEach(track => {
+        // Actualizar predicción usando velocidad
+        track.predictedX += track.vx * (deltaSeconds || 0.033);
+        track.predictedY += track.vy * (deltaSeconds || 0.033);
+
         if (!matchedTracks.has(track.id)) {
-          track.missedFrames++; track.confidence -= 0.05;
-          if (track.missedFrames <= inferParams.persistence) { track.points.push({ x: track.predictedX, y: track.predictedY, time: now }); }
+          track.missedFrames++;
+          track.confidence -= 0.02; // Decay más lento
+          // Mantener track con predicción cinemática durante más tiempo
+          if (track.missedFrames <= Math.min(60, inferParams.persistence * 2)) {
+            track.points.push({ x: track.predictedX, y: track.predictedY, time: now });
+          }
         } else if (!isInferenceFrame) {
           track.points.push({ x: track.predictedX, y: track.predictedY, time: now });
         }
@@ -1287,7 +1303,10 @@ const App = () => {
       ctx.fillText(line.label, oX + 10, lineY - 5);
     });
 
-    tracksRef.current = tracksRef.current.filter(t => t.missedFrames < Math.max(30, inferParams.persistence) && t.confidence > 0.05);
+    // Filtro de limpieza más permisivo para mantener tracks estables
+    tracksRef.current = tracksRef.current.filter(t =>
+      t.missedFrames < Math.max(60, inferParams.persistence * 2) && t.confidence > 0.02
+    );
   }, [isPlaying, detectionLines, inferParams, selectedConfigs, isOrtLoaded, currentTime, duration]);
 
   useEffect(() => {
