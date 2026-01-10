@@ -173,7 +173,7 @@ const App = () => {
 
   const [inferParams, setInferParams] = useState({
     confThreshold: 0.3,
-    detectionSkip: 1,  // Detectar en cada frame para eliminar desfase
+    detectionSkip: 3,  // Balance entre rendimiento y fluidez
     persistence: 90
   });
 
