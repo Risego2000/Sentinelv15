@@ -19,6 +19,8 @@ import * as ort from 'onnxruntime-web';
 // Set ORT wasm path
 ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.23.2/dist/';
 
+console.log('🚀 SENTINEL V15 - TIMELINE ABAJO - VERSIÓN CORRECTA CARGADA');
+
 const YOLO_CLASSES = [
   'person', 'bicycle', 'car', 'motorcycle', 'airplane', 'bus', 'train', 'truck', 'boat', 'traffic light',
   'fire hydrant', 'stop sign', 'parking meter', 'bench', 'bird', 'cat', 'dog', 'horse', 'sheep', 'cow',
@@ -1641,7 +1643,7 @@ const App = () => {
               {/* Subtle Grid Overlay */}
               <div className="absolute inset-0 opacity-5 pointer-events-none hud-grid" />
 
-              {/* Neural Timeline - Forensic Seek Bar (Bottom of Video) */}
+              {/* Neural Timeline - Forensic Seek Bar (Bottom of Video) - VERSION CORRECTA */}
               <div className="absolute bottom-0 left-0 right-0 h-1.5 w-full bg-white/5 group cursor-pointer overflow-hidden z-30">
                 <div
                   className="h-full bg-gradient-to-r from-cyan-600 to-cyan-400 shadow-[0_0_15px_#06b6d4] transition-all duration-300 relative"
