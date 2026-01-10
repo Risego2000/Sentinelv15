@@ -1571,6 +1571,18 @@ const App = () => {
             <div className="w-2 h-2 bg-cyan-500 rounded-full animate-pulse shadow-[0_0_10px_#22d3ee]" />
             <span className="text-[9px] font-mono text-cyan-400/80 uppercase tracking-wider">LIVE :: {fps} FPS</span>
           </div>
+
+          {isAnalyzing && (
+            <div className="flex items-center gap-4 bg-black/80 backdrop-blur-xl px-5 py-2.5 rounded-2xl border border-red-500/30 animate-in slide-in-from-top-4 duration-500 shadow-[0_0_20px_rgba(239,68,68,0.1)]">
+              <div className="w-6 h-6 border-2 border-red-500/20 border-t-red-500 rounded-full animate-spin flex items-center justify-center">
+                <BrainCircuit size={12} className="text-cyan-400 animate-pulse" />
+              </div>
+              <div className="flex flex-col items-end">
+                <span className="text-[9px] font-black text-red-500 uppercase tracking-widest">{statusMsg}</span>
+                <span className="text-[8px] font-mono text-cyan-500/40 uppercase">GEMINI_NEURAL_AUDIT</span>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Video Viewport - Absolute Protagonist */}
@@ -1604,18 +1616,6 @@ const App = () => {
               {/* Subtle Grid Overlay */}
               <div className="absolute inset-0 opacity-5 pointer-events-none hud-grid" />
 
-              {/* Forensic Analysis Indicator */}
-              {isAnalyzing && (
-                <div className="absolute bottom-8 right-8 z-50 bg-black/95 border-2 border-red-600/40 p-6 rounded-[30px] flex items-center gap-5 shadow-[0_0_40px_rgba(220,38,38,0.4)] animate-in slide-in-from-bottom-10">
-                  <div className="w-12 h-12 border-t-3 border-red-600 rounded-full animate-spin flex items-center justify-center">
-                    <BrainCircuit size={24} className="text-cyan-400 animate-pulse" />
-                  </div>
-                  <div className="flex flex-col">
-                    <span className="text-[11px] font-black text-red-500 uppercase tracking-widest">{statusMsg}</span>
-                    <span className="text-[11px] font-mono text-cyan-500/60 uppercase">Análisis Forense Neural</span>
-                  </div>
-                </div>
-              )}
             </div>
           )}
         </div>
