@@ -99,10 +99,16 @@ const VEHICLE_COLORS: Record<string, string> = {
   car: '#06b6d4', truck: '#f59e0b', motorcycle: '#8b5cf6', bus: '#10b981', person: '#ec4899', bicycle: '#84cc16'
 };
 
-const StatusBadge = ({ label, active, color = 'cyan', pulse = true }: { label: string; active: boolean; color?: string; pulse?: boolean }) => (
-  <div className={`flex items-center gap-2 px-3 py-1 rounded-md border text-[9px] font-black uppercase tracking-widest transition-all duration-500 ${active ? `bg-${color}-500/10 border-${color}-500/50 text-${color}-400 shadow-[0_0_15px_rgba(6,182,212,0.15)]` : 'bg-slate-900/50 border-white/5 text-slate-500 opacity-40'}`}>
-    <div className={`w-1.5 h-1.5 rounded-full ${active ? `bg-${color}-400 ${pulse ? 'animate-pulse' : ''} shadow-[0_0_8px_#22d3ee]` : 'bg-slate-700'}`} />
-    {label}
+const StatusBadge = ({ label, active, color = 'cyan', pulse = true, icon: Icon }: { label: string; active: boolean; color?: string; pulse?: boolean; icon?: any }) => (
+  <div className={`flex items-center justify-between p-3 rounded-2xl border transition-all duration-500 ${active ? `bg-${color}-950/20 border-${color}-500/20` : 'bg-slate-900/40 border-white/5 opacity-40'}`}>
+    <div className="flex items-center gap-3">
+      {Icon && <Icon size={16} className={active ? `text-${color}-500` : "text-slate-600"} />}
+      <div className="flex flex-col">
+        <span className={`text-[10px] font-black leading-none ${active ? 'text-white' : 'text-slate-500'}`}>{label}</span>
+        <span className={`text-[8px] font-mono uppercase ${active ? `text-${color}-500/60` : 'text-slate-700'}`}>{active ? "Active_Sync" : "Standby_State"}</span>
+      </div>
+    </div>
+    <div className={`w-2 h-2 rounded-full ${active ? `bg-${color}-500 ${pulse ? 'animate-pulse shadow-[0_0_8px_#22d3ee]' : ''}` : "bg-slate-700"}`} />
   </div>
 );
 
@@ -1350,8 +1356,8 @@ const App = () => {
               </div>
 
               <div className="flex flex-col gap-2 pt-2 border-t border-white/5">
-                <StatusBadge label="RADAR_ACTIVE" active={isPlaying} />
-                <StatusBadge label="AI_CORE_SYNC" active={isAnalyzing} color="red" pulse={isAnalyzing} />
+                <StatusBadge label="RADAR_ACTIVE" active={isPlaying} icon={Wifi} />
+                <StatusBadge label="AI_CORE_SYNC" active={isAnalyzing} color="red" pulse={isAnalyzing} icon={BrainCircuit} />
               </div>
             </div>
           </div>
