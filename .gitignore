@@ -33,6 +33,9 @@ dist-ssr
 *.md
 !README.md
 
-# Media/Uploads
+# Media/Uploads (except ONNX models)
 upload/
+!upload/*.onnx
+public/upload/*
+!public/upload/*.onnx
 
