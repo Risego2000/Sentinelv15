@@ -1049,7 +1049,7 @@ const App = () => {
 
       if (frameCounterRef.current % inferParams.detectionSkip === 0) {
         if (ortSessionRef.current) {
-          // YOLOv11 INFERENCE PIPELINE
+          // YOLOv11 INFERENCE PIPELINE (NO-BLOQUEANTE)
           const inputSize = 640;
           const tempCanvas = document.createElement('canvas');
           tempCanvas.width = inputSize; tempCanvas.height = inputSize;
@@ -1064,42 +1064,47 @@ const App = () => {
               input[i + 2 * inputSize * inputSize] = data[i * 4 + 2] / 255.0;
             }
             const tensor = new ort.Tensor('float32', input, [1, 3, inputSize, inputSize]);
-            const results = await ortSessionRef.current.run({ [ortSessionRef.current.inputNames[0]]: tensor });
-            const output = results[ortSessionRef.current.outputNames[0]].data as Float32Array;
-            const numLabels = 80; const numProposals = 8400;
 
-            // Calcular factor de escala del modelo al video original
-            const scaleX = v.videoWidth / inputSize;
-            const scaleY = v.videoHeight / inputSize;
+            // Ejecutar inferencia de forma no-bloqueante
+            ortSessionRef.current.run({ [ortSessionRef.current.inputNames[0]]: tensor }).then(results => {
+              const output = results[ortSessionRef.current!.outputNames[0]].data as Float32Array;
+              const numLabels = 80; const numProposals = 8400;
 
-            for (let j = 0; j < numProposals; j++) {
-              let maxProb = 0; let classId = -1;
-              for (let k = 0; k < numLabels; k++) {
-                const prob = output[(k + 4) * numProposals + j];
-                if (prob > maxProb) { maxProb = prob; classId = k; }
+              // Calcular factor de escala del modelo al video original
+              const scaleX = v.videoWidth / inputSize;
+              const scaleY = v.videoHeight / inputSize;
+
+              const newDetections: any[] = [];
+              for (let j = 0; j < numProposals; j++) {
+                let maxProb = 0; let classId = -1;
+                for (let k = 0; k < numLabels; k++) {
+                  const prob = output[(k + 4) * numProposals + j];
+                  if (prob > maxProb) { maxProb = prob; classId = k; }
+                }
+                if (maxProb > inferParams.confThreshold) {
+                  // Coordenadas en espacio del modelo (640x640)
+                  const cx = output[0 * numProposals + j];
+                  const cy = output[1 * numProposals + j];
+                  const w = output[2 * numProposals + j];
+                  const h = output[3 * numProposals + j];
+
+                  // Escalar al espacio del video original
+                  const x = (cx - w / 2) * scaleX;
+                  const y = (cy - h / 2) * scaleY;
+                  const width = w * scaleX;
+                  const height = h * scaleY;
+
+                  newDetections.push({
+                    bbox: [x, y, width, height],
+                    score: maxProb,
+                    class: YOLO_CLASSES[classId] || 'unknown',
+                    confidence: maxProb
+                  });
+                }
               }
-              if (maxProb > inferParams.confThreshold) {
-                // Coordenadas en espacio del modelo (640x640)
-                const cx = output[0 * numProposals + j];
-                const cy = output[1 * numProposals + j];
-                const w = output[2 * numProposals + j];
-                const h = output[3 * numProposals + j];
-
-                // Escalar al espacio del video original
-                const x = (cx - w / 2) * scaleX;
-                const y = (cy - h / 2) * scaleY;
-                const width = w * scaleX;
-                const height = h * scaleY;
-
-                detections.push({
-                  bbox: [x, y, width, height],
-                  score: maxProb,
-                  class: YOLO_CLASSES[classId] || 'unknown',
-                  confidence: maxProb
-                });
-              }
-            }
-            detections = applyNMS(detections, 0.45);
+              // Aplicar NMS y actualizar detecciones globales
+              detections = applyNMS(newDetections, 0.45);
+            }).catch(err => console.error('YOLO inference error:', err));
           }
         } else if (modelRef.current) {
           detections = await modelRef.current.detect(v, 40, inferParams.confThreshold);
