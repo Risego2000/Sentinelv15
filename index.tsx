@@ -33,8 +33,24 @@ const YOLO_CLASSES = [
 
 // --- Parámetros Cinemáticos ---
 const LANE_WIDTH_METERS = 3.0;
-const REFERENCE_LANE_PX = 320;
-const PIXELS_PER_METER = REFERENCE_LANE_PX / LANE_WIDTH_METERS;
+
+/**
+ * Algoritmo Proyectivo de Daganzo:
+ * Calcula la relación píxel/metro dinámicamente según la profundidad de la escena (eje Y).
+ * En una cámara con perspectiva, los objetos lejanos (Y menor) ocupan menos píxeles para la misma distancia física.
+ */
+const getPixelsPerMeterAtY = (y: number) => {
+  const horizonY = 300; // El punto de fuga (donde los carriles convergen a 0px)
+  const referenceY = 900; // Punto de referencia cerca de la parte inferior de la imagen
+  const laneWidthPxAtRef = 450; // Anchura promedio del carril en píxeles a 900Y
+
+  // Factor de escala lineal basado en la distancia al horizonte
+  const scale = (y - horizonY) / (referenceY - horizonY);
+  const currentLaneWidthPx = laneWidthPxAtRef * scale;
+
+  // Retornamos Píxeles por Metro (3m de carril definidos por el usuario)
+  return Math.max(20, currentLaneWidthPx / LANE_WIDTH_METERS);
+};
 
 // --- Componente Emblema Daganzo ---
 const DaganzoEmblem = ({ className }: { className?: string }) => (
@@ -835,26 +851,25 @@ const App = () => {
   useEffect(() => {
     const loadModels = async () => {
       try {
-        if ((window as any).cocoSsd) {
-          modelRef.current = await (window as any).cocoSsd.load();
-        }
+        const baseUrl = import.meta.env.BASE_URL || '/';
+        const modelPath = (name: string) => `${baseUrl}upload/${name}`.replace(/\/+/g, '/');
 
         console.log("Loading YOLOv11 Engine...");
-        ortSessionRef.current = await ort.InferenceSession.create('/upload/yolo11n_640.onnx', {
+        ortSessionRef.current = await ort.InferenceSession.create(modelPath('yolo11n_640.onnx'), {
           executionProviders: ['wasm'],
           graphOptimizationLevel: 'all'
         });
 
-        poseSessionRef.current = await ort.InferenceSession.create('/upload/yolo11n_pose.onnx', {
+        poseSessionRef.current = await ort.InferenceSession.create(modelPath('yolo11n_pose.onnx'), {
           executionProviders: ['wasm'],
           graphOptimizationLevel: 'all'
         });
 
         setIsOrtLoaded(true);
-        console.log("YOLOv11 Online");
+        console.log("SENTINEL_V15 Core Online :: YOLOv11 + ByteTrack Ready");
       } catch (e) {
         console.error("Model Load Error", e);
-        setStatusMsg("ERROR: NEURAL ENGINE FAILURE. FALLBACK ACTIVE.");
+        setStatusMsg("ERROR: NEURAL ENGINE FAILURE. CHECK NETWORK/ASSETS.");
       }
     };
     loadModels();
@@ -892,33 +907,34 @@ const App = () => {
 
     try {
       const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_API_KEY });
-      const systemInstruction = `Eres el AUDITOR FORENSE SUPREMO asignado a la Policía Local de Daganzo de Arriba.
+      const systemInstruction = `Eres el AUDITOR FORENSE SUPREMO de la Policía Local de Daganzo.
       
-      ESPECIFICACIONES TÉCNICAS DEL SISTEMA (SENTINEL V15 - CAPA HÍBRIDA):
-      1. Capa Local (Local Edge): TensorFlow.js (COCO-SSD) procesando a 60fps con skip de ${inferParams.detectionSkip} frames. 
-         - Umbral Inferencia: ${inferParams.confThreshold}. 
-         - Persistencia: ${inferParams.persistence} frames.
-         - Percepción: Identifica cajas delimitadoras (BBox) y centroides en plano normalizado (0.0-1.0).
-      2. Capa Remota (Cloud Judiciary): Tu rol es el juicio legal de la escena basado en la evidencia visual y las directivas.
-      3. Geometría Espacial: Carriles delimitados en eje X (0.0-1.0) y triggers en eje Y.
+      ENGINE SPECS (SENTINEL V15):
+      1. Capa Local: YOLOv11n (Object Detection) + YOLOv11n-pose (Skeletal Estimation).
+      2. Tracking: ByteTrack con Kalman Filter Smoothing. Cada vehículo tiene un ID único (ID:${track.id % 1000}).
+      3. Cinemática: Estimación de velocidad dinámica basada en corrección de perspectiva (getPixelsPerMeterAtY) asumiendo 3m de anchura de carril.
+      4. Telemetría Actual: ID=${track.id % 1000}, Clase=${track.label}, Velocidad Estimada=${Math.floor(track.velocity * fpsRef.current * 3.6)} km/h.
       
-      INSTRUCCIONES DE ANÁLISIS:
-      Analiza la ráfaga de imágenes para detectar infracciones de forma EXHAUSTIVA siguiendo estas directivas de Daganzo:
+      MISION: Auditoría forense mediante visión artificial. Analiza la secuencia de fotogramas e identifica infracciones basadas exactamente en estas directivas de Daganzo:
       "${directives}"
+      
+      REGLAS DE ORO:
+      - Si hay peatones (pose estimation), prioriza seguridad frente a velocidad.
+      - La matrícula debe ser legible. Si no, pon "UNK_PLATE".
       
       SALIDA JSON OBLIGATORIA:
       {
         "infraction": boolean,
         "plate": "MATRÍCULA",
-        "ocrConfidence": 0.95,
-        "description": "Relato técnico detallado de la infracción según directivas",
+        "ocrConfidence": 0.0-1.0,
+        "description": "Explicación técnica del veredicto",
         "severity": "leve|grave|muy-grave",
-        "legalArticle": "Referencia al código de circulación",
-        "reasoning": ["Evidencia visual 1", "Evidencia visual 2", "Inferencia técnica"],
-        "vehicleType": "Descripción visual del vehículo",
-        "subType": "Categoría",
-        "confidence": 0.98,
-        "telemetry": { "speedEstimated": "XX km/h", "maneuverType": "Giro/Cruce", "poseAlert": false }
+        "legalArticle": "Referencia LSV",
+        "reasoning": ["Evidencia 1", "Evidencia 2"],
+        "vehicleType": "Clase",
+        "subType": "Sub-clase visual",
+        "confidence": 0.0-1.0,
+        "telemetry": { "speedEstimated": "XX km/h", "maneuverType": "Giro/Cruce", "poseAlert": boolean }
       }`;
 
       const videoClipPromise = captureVideoClip(10000);
@@ -1149,14 +1165,18 @@ const App = () => {
         t.lastSeen = now; t.age++; t.missedFrames = 0;
         t.confidence = t.confidence * 0.7 + score * 0.3;
         const frameDisplacement = Math.sqrt(Math.pow(rawVx, 2) + Math.pow(rawVy, 2)) * (deltaSeconds || 0.033);
-        t.velocity = t.velocity * 0.85 + frameDisplacement * 0.15;
+        const ppmAtPos = getPixelsPerMeterAtY(cy);
+        // Velocidad instantánea en metros por intervalo de frame
+        const metersMoved = frameDisplacement / ppmAtPos;
+        t.velocity = t.velocity * 0.85 + metersMoved * 0.15;
         checkInfractions(t);
       }
 
       function checkInfractions(track: Track) {
         if (track.points.length < 2 || track.isInfractor || track.age < 10) return;
         const prevP = track.points[track.points.length - 2]; const currP = track.points[track.points.length - 1];
-        const speedKmh = Math.floor((track.velocity / PIXELS_PER_METER) * fpsRef.current * 3.6);
+        const speedKmh = Math.floor(track.velocity * fpsRef.current * 3.6);
+
         for (const line of detectionLines) {
           if (!line.infractionType) continue;
           if ((prevP.y < line.y && currP.y > line.y) || (prevP.y > line.y && currP.y < line.y)) {
@@ -1166,8 +1186,13 @@ const App = () => {
               case 'STOP_VIOLATION': if (speedKmh > 5) { triggered = true; subType = 'OMISIÓN STOP'; } break;
               case 'BUS_LANE_VIOLATION': triggered = true; subType = 'CARRIL BUS'; break;
               case 'SPEEDING':
-                let limit = selectedConfigs.some(c => c.includes('school')) ? 20 : 50;
-                if (speedKmh > limit) { triggered = true; subType = 'EXCESO VELOCIDAD'; }
+                // Extraer límite numérico de la etiqueta de la línea si existe (ej: "RADAR 30" -> 30)
+                const labelLimit = parseInt(line.label.match(/\d+/)?.[0] || "50");
+                const configLimit = selectedConfigs.some(c => c.includes('school') || c.includes('supermanzana')) ? 20 : labelLimit;
+                if (speedKmh > configLimit) { triggered = true; subType = 'EXCESO VELOCIDAD'; }
+                break;
+              case 'PEDESTRIAN_PRIORITY':
+                if (track.label !== 'person' && speedKmh > 10) { triggered = true; subType = 'PRIORIDAD PEATONAL'; }
                 break;
             }
             if (triggered) { track.isInfractor = true; track.subType = subType; }
@@ -1193,7 +1218,7 @@ const App = () => {
       const lastP = track.points[track.points.length - 1];
       const cpX = oX + (lastP.x / 1000) * dW; const cpY = oY + (lastP.y / 1000) * dH;
       const bW = (track.w / 1000) * dW; const bH = (track.h / 1000) * dH;
-      const speedKmh = Math.floor((track.velocity / PIXELS_PER_METER) * fpsRef.current * 3.6);
+      const speedKmh = Math.floor(track.velocity * fpsRef.current * 3.6);
 
       ctx.globalAlpha = Math.max(0.7, track.confidence);
       ctx.strokeStyle = track.isInfractor ? '#ef4444' : track.color;
