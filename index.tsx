@@ -1250,50 +1250,6 @@ const App = () => {
         </div>
 
         <div className="flex-1 p-6 space-y-8">
-          {/* Inference Engine Tuning Section - MOVED TO TOP */}
-          <div className="space-y-3">
-            <h3 className="text-[11px] font-black uppercase text-slate-600 tracking-widest flex items-center gap-2 px-2">
-              <Settings size={12} className="text-amber-500" /> MOTOR DE INFERENCIA (LOCAL)
-            </h3>
-            <div className="bg-slate-900/40 rounded-2xl p-4 space-y-4">
-              <div className="space-y-1">
-                <div className="flex justify-between text-[9px] font-bold text-slate-500 uppercase">
-                  <span>Umbral Confianza</span>
-                  <span className="text-cyan-400">{inferParams.confThreshold.toFixed(2)}</span>
-                </div>
-                <input
-                  type="range" min="0.1" max="0.9" step="0.05"
-                  value={inferParams.confThreshold}
-                  onChange={(e) => setInferParams(p => ({ ...p, confThreshold: parseFloat(e.target.value) }))}
-                  className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-cyan-500"
-                />
-              </div>
-              <div className="space-y-1">
-                <div className="flex justify-between text-[9px] font-bold text-slate-500 uppercase">
-                  <span>Frame Skip (Inferencia)</span>
-                  <span className="text-cyan-400">{inferParams.detectionSkip} F</span>
-                </div>
-                <input
-                  type="range" min="1" max="10" step="1"
-                  value={inferParams.detectionSkip}
-                  onChange={(e) => setInferParams(p => ({ ...p, detectionSkip: parseInt(e.target.value) }))}
-                  className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-cyan-500"
-                />
-              </div>
-              <div className="space-y-1">
-                <div className="flex justify-between text-[9px] font-bold text-slate-500 uppercase">
-                  <span>Persistencia de Track</span>
-                  <span className="text-cyan-400">{inferParams.persistence} F</span>
-                </div>
-                <input
-                  type="range" min="5" max="100" step="5"
-                  value={inferParams.persistence}
-                  onChange={(e) => setInferParams(p => ({ ...p, persistence: parseInt(e.target.value) }))}
-                  className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-cyan-500"
-                />
-              </div>
-            </div>
-          </div>
 
           <div className="space-y-4">
             <div className="flex items-center justify-between">
