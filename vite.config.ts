@@ -19,6 +19,13 @@ export default defineConfig(({ mode }) => {
       alias: {
         '@': path.resolve(__dirname, '.'),
       }
-    }
+    },
+    build: {
+      rollupOptions: {
+        external: [],
+      },
+      assetsInlineLimit: 0, // Prevent inlining large ONNX files
+    },
+    publicDir: 'public', // Ensure public directory is copied to dist
   };
 });
