@@ -172,9 +172,9 @@ const App = () => {
   const [duration, setDuration] = useState(0);
 
   const [inferParams, setInferParams] = useState({
-    confThreshold: 0.25,
-    detectionSkip: 2,
-    persistence: 60
+    confThreshold: 0.3,
+    detectionSkip: 1,  // Detectar en cada frame para eliminar desfase
+    persistence: 90
   });
 
   const frameCounterRef = useRef(0);
@@ -1248,21 +1248,23 @@ const App = () => {
         }
       }
 
-      // Inter-inference smoothing glide (con predicción cinemática)
+      // Inter-inference smoothing glide (interpolación mejorada)
       const isInferenceFrame = frameCounterRef.current % inferParams.detectionSkip === 0;
       tracksRef.current.forEach(track => {
-        // Actualizar predicción usando velocidad
-        track.predictedX += track.vx * (deltaSeconds || 0.033);
-        track.predictedY += track.vy * (deltaSeconds || 0.033);
+        // Predicción cinemática suave
+        const dt = deltaSeconds || 0.033;
+        track.predictedX += track.vx * dt;
+        track.predictedY += track.vy * dt;
 
         if (!matchedTracks.has(track.id)) {
           track.missedFrames++;
-          track.confidence -= 0.02; // Decay más lento
-          // Mantener track con predicción cinemática durante más tiempo
-          if (track.missedFrames <= Math.min(60, inferParams.persistence * 2)) {
+          track.confidence -= 0.015; // Decay muy lento
+          // Mantener track con predicción durante más tiempo
+          if (track.missedFrames <= Math.min(90, inferParams.persistence * 2)) {
             track.points.push({ x: track.predictedX, y: track.predictedY, time: now });
           }
-        } else if (!isInferenceFrame) {
+        } else {
+          // Siempre añadir punto para fluidez, incluso en frames sin inferencia
           track.points.push({ x: track.predictedX, y: track.predictedY, time: now });
         }
       });
