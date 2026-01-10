@@ -96,7 +96,17 @@ interface InfractionLog {
 }
 
 const VEHICLE_COLORS: Record<string, string> = {
-  car: '#06b6d4', truck: '#f59e0b', motorcycle: '#8b5cf6', bus: '#10b981', person: '#ec4899', bicycle: '#84cc16'
+  car: '#06b6d4', // Turismos y Furgonetas
+  van: '#06b6d4',
+  truck: '#f59e0b', // Pesados
+  motorcycle: '#8b5cf6', // Dos ruedas motoficadas
+  bus: '#10b981', // Transporte colectivo
+  person: '#ec4899', // Peatón / Pose
+  bicycle: '#84cc16', // Ciclista
+  train: '#94a3b8', // Ferroviario / Maquinaria
+  airplane: '#94a3b8',
+  'traffic light': '#fef08a', // Infraestructura (objetos)
+  'stop sign': '#fef08a'
 };
 
 const StatusBadge = ({ label, active, color = 'cyan', pulse = true, icon: Icon }: { label: string; active: boolean; color?: string; pulse?: boolean; icon?: any }) => (
