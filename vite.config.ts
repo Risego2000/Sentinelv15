@@ -5,12 +5,31 @@ import react from '@vitejs/plugin-react';
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, '.', '');
   return {
-    base: '/SENTINELV15/',
     server: {
       port: 3000,
       host: '0.0.0.0',
     },
-    plugins: [react()],
+    plugins: [
+      react(),
+      {
+        name: 'copy-onnx-wasm',
+        closeBundle: async () => {
+          const fs = await import('fs');
+          const path = await import('path');
+          const srcDir = path.resolve(__dirname, 'node_modules/onnxruntime-web/dist');
+          const destDir = path.resolve(__dirname, 'dist');
+
+          if (!fs.existsSync(destDir)) fs.mkdirSync(destDir);
+
+          // Copy all .wasm files
+          const files = fs.readdirSync(srcDir).filter(f => f.endsWith('.wasm'));
+          files.forEach(file => {
+            fs.copyFileSync(path.join(srcDir, file), path.join(destDir, file));
+            console.log(`[Vite] Copied ${file} to dist/`);
+          });
+        }
+      }
+    ],
     define: {
       'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),
       'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY)
@@ -19,13 +38,6 @@ export default defineConfig(({ mode }) => {
       alias: {
         '@': path.resolve(__dirname, '.'),
       }
-    },
-    build: {
-      rollupOptions: {
-        external: [],
-      },
-      assetsInlineLimit: 0, // Prevent inlining large ONNX files
-    },
-    publicDir: 'public', // Ensure public directory is copied to dist
+    }
   };
 });

@@ -23,19 +23,9 @@ dist-ssr
 *.sln
 *.sw?
 
-# Local env files
-.env
-.env.local
-.env.*.local
-
-# Backups
-*.backup-*
-*.md
-!README.md
-
-# Media/Uploads (except ONNX models)
-upload/
-!upload/*.onnx
-public/upload/*
-!public/upload/*.onnx
+# Project specifics
+public/*.wasm
+public/upload/*.mp4
+public/upload/*.gif
+public/upload/*.webm
 

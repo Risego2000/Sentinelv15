@@ -12,46 +12,14 @@ import {
   Eye, MousePointer2, Thermometer, Gauge, ArrowRightCircle,
   TrendingUp, Layers, Info, Hash, Power, Navigation, Target,
   AlertTriangle, Scale, ClipboardList, Video, FileBadge, CheckCircle2,
-  Clock, MapPin, Ruler, BadgeCheck, BarChart3, Binary, Signal, Plus, Fingerprint, ActivitySquare
+  Clock, MapPin, Ruler, BadgeCheck, BarChart3, Binary, Signal, Plus
 } from 'lucide-react';
-import * as ort from 'onnxruntime-web';
-import { YOLO11Detector, ByteTracker, Track as YOLOTrack } from './yolo-tracker';
-
-// Set ORT wasm path
-ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.23.2/dist/';
-
-const YOLO_CLASSES = [
-  'person', 'bicycle', 'car', 'motorcycle', 'airplane', 'bus', 'train', 'truck', 'boat', 'traffic light',
-  'fire hydrant', 'stop sign', 'parking meter', 'bench', 'bird', 'cat', 'dog', 'horse', 'sheep', 'cow',
-  'elephant', 'bear', 'zebra', 'giraffe', 'backpack', 'umbrella', 'handbag', 'tie', 'suitcase', 'frisbee',
-  'skis', 'snowboard', 'sports ball', 'kite', 'baseball bat', 'baseball glove', 'skateboard', 'surfboard',
-  'tennis racket', 'bottle', 'wine glass', 'cup', 'fork', 'knife', 'spoon', 'bowl', 'banana', 'apple',
-  'sandwich', 'orange', 'broccoli', 'carrot', 'hot dog', 'pizza', 'donut', 'cake', 'chair', 'couch',
-  'potted plant', 'bed', 'dining table', 'toilet', 'tv', 'laptop', 'mouse', 'remote', 'keyboard', 'cell phone',
-  'microwave', 'oven', 'toaster', 'sink', 'refrigerator', 'book', 'clock', 'vase', 'scissors', 'teddy bear',
-  'hair drier', 'toothbrush'
-];
+import { YoloDetector, ByteTracker } from './yolo-tracker';
 
 // --- Parámetros Cinemáticos ---
 const LANE_WIDTH_METERS = 3.0;
-
-/**
- * Algoritmo Proyectivo de Daganzo:
- * Calcula la relación píxel/metro dinámicamente según la profundidad de la escena (eje Y).
- * En una cámara con perspectiva, los objetos lejanos (Y menor) ocupan menos píxeles para la misma distancia física.
- */
-const getPixelsPerMeterAtY = (y: number) => {
-  const horizonY = 300; // El punto de fuga (donde los carriles convergen a 0px)
-  const referenceY = 900; // Punto de referencia cerca de la parte inferior de la imagen
-  const laneWidthPxAtRef = 450; // Anchura promedio del carril en píxeles a 900Y
-
-  // Factor de escala lineal basado en la distancia al horizonte
-  const scale = (y - horizonY) / (referenceY - horizonY);
-  const currentLaneWidthPx = laneWidthPxAtRef * scale;
-
-  // Retornamos Píxeles por Metro (3m de carril definidos por el usuario)
-  return Math.max(20, currentLaneWidthPx / LANE_WIDTH_METERS);
-};
+const REFERENCE_LANE_PX = 320;
+const PIXELS_PER_METER = REFERENCE_LANE_PX / LANE_WIDTH_METERS;
 
 // --- Componente Emblema Daganzo ---
 const DaganzoEmblem = ({ className }: { className?: string }) => (
@@ -113,29 +81,13 @@ interface InfractionLog {
 }
 
 const VEHICLE_COLORS: Record<string, string> = {
-  car: '#06b6d4', // Turismos y Furgonetas
-  van: '#06b6d4',
-  truck: '#f59e0b', // Pesados
-  motorcycle: '#8b5cf6', // Dos ruedas motoficadas
-  bus: '#10b981', // Transporte colectivo
-  person: '#ec4899', // Peatón / Pose
-  bicycle: '#84cc16', // Ciclista
-  train: '#94a3b8', // Ferroviario / Maquinaria
-  airplane: '#94a3b8',
-  'traffic light': '#fef08a', // Infraestructura (objetos)
-  'stop sign': '#fef08a'
+  car: '#06b6d4', truck: '#f59e0b', motorcycle: '#8b5cf6', bus: '#10b981', person: '#ec4899', bicycle: '#84cc16'
 };
 
-const StatusBadge = ({ label, active, color = 'cyan', pulse = true, icon: Icon }: { label: string; active: boolean; color?: string; pulse?: boolean; icon?: any }) => (
-  <div className={`flex items-center justify-between p-3 rounded-2xl border transition-all duration-500 ${active ? `bg-${color}-950/20 border-${color}-500/20` : 'bg-slate-900/40 border-white/5 opacity-40'}`}>
-    <div className="flex items-center gap-3">
-      {Icon && <Icon size={16} className={active ? `text-${color}-500` : "text-slate-600"} />}
-      <div className="flex flex-col">
-        <span className={`text-[10px] font-black leading-none ${active ? 'text-white' : 'text-slate-500'}`}>{label}</span>
-        <span className={`text-[8px] font-mono uppercase ${active ? `text-${color}-500/60` : 'text-slate-700'}`}>{active ? "Active_Sync" : "Standby_State"}</span>
-      </div>
-    </div>
-    <div className={`w-2 h-2 rounded-full ${active ? `bg-${color}-500 ${pulse ? 'animate-pulse shadow-[0_0_8px_#22d3ee]' : ''}` : "bg-slate-700"}`} />
+const StatusBadge = ({ label, active, color = 'cyan', pulse = true }: { label: string; active: boolean; color?: string; pulse?: boolean }) => (
+  <div className={`flex items-center gap-2 px-3 py-1 rounded-md border text-[9px] font-black uppercase tracking-widest transition-all duration-500 ${active ? `bg-${color}-500/10 border-${color}-500/50 text-${color}-400 shadow-[0_0_15px_rgba(6,182,212,0.15)]` : 'bg-slate-900/50 border-white/5 text-slate-500 opacity-40'}`}>
+    <div className={`w-1.5 h-1.5 rounded-full ${active ? `bg-${color}-400 ${pulse ? 'animate-pulse' : ''} shadow-[0_0_8px_#22d3ee]` : 'bg-slate-700'}`} />
+    {label}
   </div>
 );
 
@@ -157,8 +109,6 @@ const App = () => {
   const [fps, setFps] = useState(0);
   const [directives, setDirectives] = useState<string>(DEFAULT_DIRECTIVES);
   const [aiFeedback, setAiFeedback] = useState<string | null>(null);
-  const [trackingMode, setTrackingMode] = useState<'bytetrack' | 'botsort'>('botsort');
-  const [isOrtLoaded, setIsOrtLoaded] = useState(false);
 
   const [logs, setLogs] = useState<InfractionLog[]>([]);
   const [selectedLog, setSelectedLog] = useState<InfractionLog | null>(null);
@@ -166,27 +116,20 @@ const App = () => {
   const [cumulativeExpedientes, setCumulativeExpedientes] = useState(0);
 
   const [systemStats, setSystemStats] = useState({
-    cpu: 24, mem: 1.2, temp: 42, net: 85, gps: '40.6483° N, 3.4582° W'
+    cpu: 24,
+    mem: 1.2,
+    temp: 42,
+    net: 85,
+    gps: '40.6483° N, 3.4582° W'
   });
 
-  const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(0);
-
   const [inferParams, setInferParams] = useState({
-    confThreshold: 0.3,
-    detectionSkip: 3,  // Balance entre rendimiento y fluidez
-    persistence: 90
+    confThreshold: 0.35,
+    detectionSkip: 4,
+    persistence: 45
   });
 
   const frameCounterRef = useRef(0);
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const yoloDetector = useRef<YOLO11Detector>(new YOLO11Detector());
-  const byteTracker = useRef<ByteTracker>(new ByteTracker());
-  const tracksRef = useRef<Track[]>([]);
-  const processingRef = useRef(false);
-  const lastFrameTime = useRef(Date.now());
-  const fpsRef = useRef(30);
 
 
 
@@ -800,6 +743,14 @@ const App = () => {
     });
   };
 
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const tracksRef = useRef<Track[]>([]);
+  const detectorRef = useRef<YoloDetector | null>(null);
+  const trackerRef = useRef<ByteTracker | null>(null);
+  const processingRef = useRef(false);
+  const lastFrameTime = useRef(Date.now());
+  const fpsRef = useRef(30);
 
   // Feedback al actualizar directivas
   const handleDirectivesChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -851,22 +802,15 @@ const App = () => {
   useEffect(() => {
     const loadModels = async () => {
       try {
-        const baseUrl = import.meta.env.BASE_URL || '/';
-        const modelPath = baseUrl.endsWith('/') ? `${baseUrl}upload/yolo11n_640.onnx` : `${baseUrl}/upload/yolo11n_640.onnx`;
-        const posePath = baseUrl.endsWith('/') ? `${baseUrl}upload/yolo11n_pose.onnx` : `${baseUrl}/upload/yolo11n_pose.onnx`;
+        const detector = new YoloDetector();
+        // Assuming user puts files in public/upload/
+        await detector.load('/upload/yolo11n_640.onnx');
+        detectorRef.current = detector;
 
-        console.log("🚀 Loading YOLO11 + ByteTrack...");
-        const success = await yoloDetector.current.loadModels(modelPath, posePath);
-
-        if (success) {
-          setIsOrtLoaded(true);
-          console.log("✅ SENTINEL_V15 Core Online :: YOLO11 + ByteTrack Ready");
-        } else {
-          setStatusMsg("ERROR: Failed to load YOLO11 models");
-        }
+        trackerRef.current = new ByteTracker();
+        console.log("YOLOv11 system initialized");
       } catch (e) {
-        console.error("❌ Model Load Error", e);
-        setStatusMsg("ERROR: NEURAL ENGINE FAILURE. CHECK NETWORK/ASSETS.");
+        console.error("YOLO Load Error", e);
       }
     };
     loadModels();
@@ -904,34 +848,33 @@ const App = () => {
 
     try {
       const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_API_KEY });
-      const systemInstruction = `Eres el AUDITOR FORENSE SUPREMO de la Policía Local de Daganzo.
+      const systemInstruction = `Eres el AUDITOR FORENSE SUPREMO asignado a la Policía Local de Daganzo de Arriba.
       
-      ENGINE SPECS (SENTINEL V15):
-      1. Capa Local: YOLOv11n (Object Detection) + YOLOv11n-pose (Skeletal Estimation).
-      2. Tracking: ByteTrack con Kalman Filter Smoothing. Cada vehículo tiene un ID único (ID:${track.id % 1000}).
-      3. Cinemática: Estimación de velocidad dinámica basada en corrección de perspectiva (getPixelsPerMeterAtY) asumiendo 3m de anchura de carril.
-      4. Telemetría Actual: ID=${track.id % 1000}, Clase=${track.label}, Velocidad Estimada=${Math.floor(track.velocity * fpsRef.current * 3.6)} km/h.
+      ESPECIFICACIONES TÉCNICAS DEL SISTEMA (SENTINEL V15 - CAPA HÍBRIDA):
+      1. Capa Local (Local Edge): YOLOv11n (ONNX) + ByteTrack para seguimiento profesional de alta precisión.
+         - Tracker: ByteTrack (Kalman Filter + Hungarian Algorithm).
+         - Modelo: YOLO11-Nano (640px) optimizado para WebAssembly.
+         - Vectores de Estado: Posición y velocidad (vx, vy) suavizados por Filtro de Kalman.
+      2. Capa Remota (Cloud Judiciary): Tu rol es el juicio legal de la escena basado en la evidencia visual y las directivas.
+      3. Geometría Espacial: Carriles delimitados en eje X (0.0-1.0) y triggers en eje Y.
       
-      MISION: Auditoría forense mediante visión artificial. Analiza la secuencia de fotogramas e identifica infracciones basadas exactamente en estas directivas de Daganzo:
+      INSTRUCCIONES DE ANÁLISIS:
+      Analiza la ráfaga de imágenes para detectar infracciones de forma EXHAUSTIVA siguiendo estas directivas de Daganzo:
       "${directives}"
-      
-      REGLAS DE ORO:
-      - Si hay peatones (pose estimation), prioriza seguridad frente a velocidad.
-      - La matrícula debe ser legible. Si no, pon "UNK_PLATE".
       
       SALIDA JSON OBLIGATORIA:
       {
         "infraction": boolean,
         "plate": "MATRÍCULA",
-        "ocrConfidence": 0.0-1.0,
-        "description": "Explicación técnica del veredicto",
+        "ocrConfidence": 0.95,
+        "description": "Relato técnico detallado de la infracción según directivas",
         "severity": "leve|grave|muy-grave",
-        "legalArticle": "Referencia LSV",
-        "reasoning": ["Evidencia 1", "Evidencia 2"],
-        "vehicleType": "Clase",
-        "subType": "Sub-clase visual",
-        "confidence": 0.0-1.0,
-        "telemetry": { "speedEstimated": "XX km/h", "maneuverType": "Giro/Cruce", "poseAlert": boolean }
+        "legalArticle": "Referencia al código de circulación",
+        "reasoning": ["Evidencia visual 1", "Evidencia visual 2", "Inferencia técnica"],
+        "vehicleType": "Descripción visual del vehículo",
+        "subType": "Categoría",
+        "confidence": 0.98,
+        "telemetry": { "speedEstimated": "XX km/h", "maneuverType": "Giro/Cruce", "poseAlert": false }
       }`;
 
       const videoClipPromise = captureVideoClip(10000);
@@ -977,7 +920,7 @@ const App = () => {
   };
 
   const processFrame = useCallback(async () => {
-    if (!videoRef.current || !canvasRef.current) return;
+    if (!videoRef.current || !canvasRef.current || !detectorRef.current || !trackerRef.current) return;
     const v = videoRef.current;
     const canvas = canvasRef.current;
     const ctx = canvas.getContext('2d');
@@ -1002,314 +945,318 @@ const App = () => {
     const oY = (canvas.height - dH) / 2;
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (!isPlaying) return;
 
-    if (v.duration) {
-      if (Math.abs(currentTime - v.currentTime) > 0.5) setCurrentTime(v.currentTime);
-      if (duration !== v.duration) setDuration(v.duration);
+    // HUD-only layer
+    if (isManualMode && canvasRef.current) {
+      ctx.strokeStyle = 'rgba(34, 211, 238, 0.5)';
+      ctx.setLineDash([5, 5]);
+      ctx.beginPath();
+      ctx.moveTo(oX, 0); ctx.lineTo(oX + dW, 0);
+      ctx.setLineDash([]);
     }
 
-    const matchedTracks = new Set<number>();
+    frameCounterRef.current++;
 
-    if (isPlaying) {
-      // Render interactive forge line if manual mode is active
-      if (isManualMode && canvasRef.current) {
-        ctx.strokeStyle = 'rgba(34, 211, 238, 0.5)';
-        ctx.setLineDash([5, 5]);
-        ctx.beginPath();
-        ctx.moveTo(oX, 0); ctx.lineTo(oX + dW, 0);
-        ctx.setLineDash([]);
-      }
+    // --- YOLOv11 & ByteTrack Pipeline ---
+    let detections: any[] = []; // Use any to match Yolo interface or explicit type
+    // Only run expensive inference on skip frames
+    const runInference = frameCounterRef.current % inferParams.detectionSkip === 0;
 
-      frameCounterRef.current++;
-      let detections: any[] = [];
+    if (runInference) {
+      detections = await detectorRef.current.detect(v, inferParams.confThreshold);
+    }
 
-      if (frameCounterRef.current % inferParams.detectionSkip === 0) {
-        if (ortSessionRef.current) {
-          // YOLOv11 INFERENCE PIPELINE (NO-BLOQUEANTE)
-          const inputSize = 640;
-          const tempCanvas = document.createElement('canvas');
-          tempCanvas.width = inputSize; tempCanvas.height = inputSize;
-          const tempCtx = tempCanvas.getContext('2d');
-          if (tempCtx) {
-            tempCtx.drawImage(v, 0, 0, inputSize, inputSize);
-            const { data } = tempCtx.getImageData(0, 0, inputSize, inputSize);
-            const input = new Float32Array(3 * inputSize * inputSize);
-            for (let i = 0; i < inputSize * inputSize; i++) {
-              input[i] = data[i * 4] / 255.0;
-              input[i + inputSize * inputSize] = data[i * 4 + 1] / 255.0;
-              input[i + 2 * inputSize * inputSize] = data[i * 4 + 2] / 255.0;
-            }
-            const tensor = new ort.Tensor('float32', input, [1, 3, inputSize, inputSize]);
+    // Run Tracker (Always run to keep Kalman filters updating)
+    // If no inference, we pass empty detections?
+    // NOTE: Passing empty detections on skip frames counts as 'missed' for tracker. 
+    // Given the short skip (4 frames), this is acceptable as persistence is >30.
+    // Ideally we would separate Predict/Update, but for now this works.
 
-            // Ejecutar inferencia de forma no-bloqueante
-            ortSessionRef.current.run({ [ortSessionRef.current.inputNames[0]]: tensor }).then(results => {
-              const output = results[ortSessionRef.current!.outputNames[0]].data as Float32Array;
-              const numLabels = 80; const numProposals = 8400;
+    // IMPORTANT: Only update tracker with NEW detections. 
+    // If we skip inference, we SHOULD NOT call update([]) as it will treat it as "object gone".
+    // We should only call tracker.update when we have fresh data, OR we need a tracker.predict() method.
+    // For this implementation, we will ONLY update tracks when inference runs.
 
-              // Calcular factor de escala del modelo al video original
-              const scaleX = v.videoWidth / inputSize;
-              const scaleY = v.videoHeight / inputSize;
+    let activeTracks: any[] = [];
+    if (runInference) {
+      activeTracks = trackerRef.current.update(detections);
 
-              const newDetections: any[] = [];
-              for (let j = 0; j < numProposals; j++) {
-                let maxProb = 0; let classId = -1;
-                for (let k = 0; k < numLabels; k++) {
-                  const prob = output[(k + 4) * numProposals + j];
-                  if (prob > maxProb) { maxProb = prob; classId = k; }
-                }
-                if (maxProb > inferParams.confThreshold) {
-                  // Coordenadas en espacio del modelo (640x640)
-                  const cx = output[0 * numProposals + j];
-                  const cy = output[1 * numProposals + j];
-                  const w = output[2 * numProposals + j];
-                  const h = output[3 * numProposals + j];
+      // Sync visual tracks with tracker output
+      const newVisualTracks: Track[] = [];
+      const matchedIds = new Set<number>();
 
-                  // Escalar al espacio del video original
-                  const x = (cx - w / 2) * scaleX;
-                  const y = (cy - h / 2) * scaleY;
-                  const width = w * scaleX;
-                  const height = h * scaleY;
+      activeTracks.forEach(t => {
+        matchedIds.add(t.trackId);
+        let vt = tracksRef.current.find(existing => existing.id === t.trackId);
 
-                  newDetections.push({
-                    bbox: [x, y, width, height],
-                    score: maxProb,
-                    class: YOLO_CLASSES[classId] || 'unknown',
-                    confidence: maxProb
-                  });
-                }
-              }
-              // Aplicar NMS y actualizar detecciones globales
-              detections = applyNMS(newDetections, 0.45);
-            }).catch(err => console.error('YOLO inference error:', err));
-          }
-        } else if (modelRef.current) {
-          detections = await modelRef.current.detect(v, 40, inferParams.confThreshold);
+        const cx = t.bbox[0] + t.bbox[2] / 2;
+        const cy = t.bbox[1] + t.bbox[3] / 2;
+
+        if (!vt) {
+          // New Visual Track
+          vt = {
+            id: t.trackId,
+            label: t.className,
+            points: [],
+            lastSeen: now,
+            lastSnapshotTime: 0,
+            color: VEHICLE_COLORS[t.className] || '#fff',
+            snapshots: [],
+            velocity: 0,
+            age: t.age,
+            analyzed: false,
+            vx: 0, vy: 0,
+            predictedX: cx, predictedY: cy,
+            confidence: t.score,
+            missedFrames: 0,
+            w: t.bbox[2], h: t.bbox[3],
+            isInfractor: false
+          };
         }
-      }
 
-      function applyNMS(dets: any[], iouThresh: number) {
-        if (dets.length === 0) return [];
-        const sorted = dets.sort((a, b) => b.score - a.score);
-        const keep = []; const suppressed = new Array(dets.length).fill(false);
-        for (let i = 0; i < sorted.length; i++) {
-          if (suppressed[i]) continue;
-          keep.push(sorted[i]);
-          for (let j = i + 1; j < sorted.length; j++) {
-            if (suppressed[j]) continue;
-            if (calculateIoU(sorted[i].bbox, sorted[j].bbox) > iouThresh) suppressed[j] = true;
-          }
-        }
-        return keep;
-      }
+        // Update State
+        vt.lastSeen = now;
+        vt.points.push({ x: cx, y: cy, time: now });
+        // Kalman Velocity (pixels/frame? No, depends on tracker implementation. 
+        // My tracker uses simple state. Velocity is in state[4], state[5])
+        // Let's rely on points diff for now to match UI expectations or use state.
+        vt.w = t.bbox[2];
+        vt.h = t.bbox[3];
+        vt.confidence = t.score;
+        vt.age = t.age;
 
-      function calculateIoU(boxA: number[], boxB: number[]) {
-        const xA = Math.max(boxA[0], boxB[0]); const yA = Math.max(boxA[1], boxB[1]);
-        const xB = Math.min(boxA[0] + boxA[2], boxB[0] + boxB[2]); const yB = Math.min(boxA[1] + boxA[3], boxB[1] + boxB[3]);
-        const interArea = Math.max(0, xB - xA) * Math.max(0, yB - yA);
-        return interArea / (boxA[2] * boxA[3] + boxB[2] * boxB[3] - interArea);
-      }
+        // History clamp
+        if (vt.points.length > 50) vt.points.shift();
 
-      // Kinematic update
-      tracksRef.current.forEach(track => {
-        track.predictedX = track.points[track.points.length - 1].x + (track.vx * deltaSeconds);
-        track.predictedY = track.points[track.points.length - 1].y + (track.vy * deltaSeconds);
+        newVisualTracks.push(vt);
       });
 
-      // BYTE-TRACK LOGIC
-      const highDets = detections.filter(d => d.score >= inferParams.confThreshold);
-      const lowDets = detections.filter(d => d.score < inferParams.confThreshold && d.score > 0.1);
-      const matchedTracks = new Set<number>();
-      const matchedDets = new Set<number>();
-
-      // STAGE 1: Match high-confidence detections
-      highDets.forEach((det, dIdx) => {
-        const lx = (det.bbox[0] / v.videoWidth) * 1000; const ly = (det.bbox[1] / v.videoHeight) * 1000;
-        const lw = (det.bbox[2] / v.videoWidth) * 1000; const lh = (det.bbox[3] / v.videoHeight) * 1000;
-        const cx = lx + lw / 2; const cy = ly + lh / 2;
-        let bestTrack: Track | null = null; let minMatchScore = Infinity;
-
-        for (const track of tracksRef.current) {
-          if (matchedTracks.has(track.id) || track.label !== det.class) continue;
-          const iou = calculateIoU([track.predictedX - track.w / 2, track.predictedY - track.h / 2, track.w, track.h], [lx, ly, lw, lh]);
-          const dist = Math.sqrt(Math.pow(track.predictedX - cx, 2) + Math.pow(track.predictedY - cy, 2));
-          const matchScore = (1 - iou) * 0.7 + (dist / 500) * 0.3;
-          if (matchScore < 0.8 && matchScore < minMatchScore) { minMatchScore = matchScore; bestTrack = track; }
-        }
-        if (bestTrack) {
-          matchedTracks.add(bestTrack.id); matchedDets.add(dIdx);
-          updateTrackProperties(bestTrack, cx, cy, lw, lh, det.score);
-        }
-      });
-
-      // STAGE 2: Low-confidence matching
-      lowDets.forEach(det => {
-        const lx = (det.bbox[0] / v.videoWidth) * 1000; const ly = (det.bbox[1] / v.videoHeight) * 1000;
-        const lw = (det.bbox[2] / v.videoWidth) * 1000; const lh = (det.bbox[3] / v.videoHeight) * 1000;
-        const cx = lx + lw / 2; const cy = ly + lh / 2;
-        for (const track of tracksRef.current) {
-          if (matchedTracks.has(track.id) || track.label !== det.class) continue;
-          if (calculateIoU([track.predictedX - track.w / 2, track.predictedY - track.h / 2, track.w, track.h], [lx, ly, lw, lh]) > 0.4) {
-            matchedTracks.add(track.id); updateTrackProperties(track, cx, cy, lw, lh, det.score); break;
-          }
-        }
-      });
-
-      // STAGE 3: New track initiation (con filtro anti-duplicados más estricto)
-      highDets.forEach((det, dIdx) => {
-        if (matchedDets.has(dIdx)) return;
-        const lx = (det.bbox[0] / v.videoWidth) * 1000; const ly = (det.bbox[1] / v.videoHeight) * 1000;
-        const lw = (det.bbox[2] / v.videoWidth) * 1000; const lh = (det.bbox[3] / v.videoHeight) * 1000;
-        const cx = lx + lw / 2; const cy = ly + lh / 2;
-        const isDuplicate = tracksRef.current.some(t => {
-          const iou = calculateIoU([t.predictedX - t.w / 2, t.predictedY - t.h / 2, t.w, t.h], [lx, ly, lw, lh]);
-          const dist = Math.sqrt(Math.pow(t.predictedX - cx, 2) + Math.pow(t.predictedY - cy, 2));
-          return iou > 0.5 || dist < 60;
-        });
-        if (!isDuplicate && lw > 30 && lh > 30) {
-          setCumulativeDetections(prev => prev + 1);
-          tracksRef.current.push({
-            id: now + Math.floor(Math.random() * 1000), label: det.class, points: [{ x: cx, y: cy, time: now }],
-            lastSeen: now, lastSnapshotTime: 0, color: VEHICLE_COLORS[det.class] || '#fff', snapshots: [],
-            velocity: 0, age: 0, analyzed: false, vx: 0, vy: 0, predictedX: cx, predictedY: cy,
-            confidence: det.score, missedFrames: 0, w: lw, h: lh
-          });
-        }
-      });
-
-      function updateTrackProperties(t: Track, cx: number, cy: number, lw: number, lh: number, score: number) {
-        const lastP = t.points[t.points.length - 1];
-        const rawVx = (cx - lastP.x) / (deltaSeconds || 0.033);
-        const rawVy = (cy - lastP.y) / (deltaSeconds || 0.033);
-        // Suavizado cinemático más agresivo para reducir jitter
-        t.vx = t.vx * 0.75 + rawVx * 0.25;
-        t.vy = t.vy * 0.75 + rawVy * 0.25;
-        // Predicción Kalman-like: más peso en predicción para suavidad
-        const smoothX = t.predictedX * 0.3 + cx * 0.7;
-        const smoothY = t.predictedY * 0.3 + cy * 0.7;
-        t.points.push({ x: smoothX, y: smoothY, time: now });
-        // Suavizado de dimensiones más agresivo
-        t.w = t.w * 0.85 + lw * 0.15;
-        t.h = t.h * 0.85 + lh * 0.15;
-        t.lastSeen = now; t.age++; t.missedFrames = 0;
-        // Confianza con decay más lento para mantener tracks
-        t.confidence = Math.min(1.0, t.confidence * 0.85 + score * 0.15);
-        const frameDisplacement = Math.sqrt(Math.pow(rawVx, 2) + Math.pow(rawVy, 2)) * (deltaSeconds || 0.033);
-        const ppmAtPos = getPixelsPerMeterAtY(cy);
-        // Velocidad instantánea en metros por intervalo de frame
-        const metersMoved = frameDisplacement / ppmAtPos;
-        t.velocity = t.velocity * 0.85 + metersMoved * 0.15;
-        checkInfractions(t);
-      }
-
-      function checkInfractions(track: Track) {
-        if (track.points.length < 2 || track.isInfractor || track.age < 10) return;
-        const prevP = track.points[track.points.length - 2]; const currP = track.points[track.points.length - 1];
-        const speedKmh = Math.floor(track.velocity * fpsRef.current * 3.6);
-
-        for (const line of detectionLines) {
-          if (!line.infractionType) continue;
-          if ((prevP.y < line.y && currP.y > line.y) || (prevP.y > line.y && currP.y < line.y)) {
-            let triggered = false; let subType = '';
-            switch (line.infractionType) {
-              case 'LINE_CROSSING': triggered = true; subType = 'LÍNEA CONTINUA'; break;
-              case 'STOP_VIOLATION': if (speedKmh > 5) { triggered = true; subType = 'OMISIÓN STOP'; } break;
-              case 'BUS_LANE_VIOLATION': triggered = true; subType = 'CARRIL BUS'; break;
-              case 'SPEEDING':
-                // Extraer límite numérico de la etiqueta de la línea si existe (ej: "RADAR 30" -> 30)
-                const labelLimit = parseInt(line.label.match(/\d+/)?.[0] || "50");
-                const configLimit = selectedConfigs.some(c => c.includes('school') || c.includes('supermanzana')) ? 20 : labelLimit;
-                if (speedKmh > configLimit) { triggered = true; subType = 'EXCESO VELOCIDAD'; }
-                break;
-              case 'PEDESTRIAN_PRIORITY':
-                if (track.label !== 'person' && speedKmh > 10) { triggered = true; subType = 'PRIORIDAD PEATONAL'; }
-                break;
-            }
-            if (triggered) { track.isInfractor = true; track.subType = subType; }
-          }
-        }
-      }
-
-      // Inter-inference smoothing glide (interpolación mejorada)
-      const isInferenceFrame = frameCounterRef.current % inferParams.detectionSkip === 0;
-      tracksRef.current.forEach(track => {
-        // Predicción cinemática suave
-        const dt = deltaSeconds || 0.033;
-        track.predictedX += track.vx * dt;
-        track.predictedY += track.vy * dt;
-
-        if (!matchedTracks.has(track.id)) {
-          track.missedFrames++;
-          track.confidence -= 0.015; // Decay muy lento
-          // Mantener track con predicción durante más tiempo
-          if (track.missedFrames <= Math.min(90, inferParams.persistence * 2)) {
-            track.points.push({ x: track.predictedX, y: track.predictedY, time: now });
-          }
-        } else {
-          // Siempre añadir punto para fluidez, incluso en frames sin inferencia
-          track.points.push({ x: track.predictedX, y: track.predictedY, time: now });
+      // Handle lost tracks (fade out effect could be added here, but simplest is to sync strictly)
+      // But to avoid flicker, maybe keep tracks that were just lost?
+      // The tracker handles persistence. If it's not in activeTracks, it's GONE (timed out).
+      tracksRef.current = newVisualTracks;
+    } else {
+      // Interpolation for smooth UI (Predict phase only)
+      // Since we didn't run tracker, we linearly predict visual tracks
+      tracksRef.current.forEach(t => {
+        if (t.points.length > 1) {
+          const p1 = t.points[t.points.length - 1];
+          const p2 = t.points[t.points.length - 2];
+          const vx = p1.x - p2.x;
+          const vy = p1.y - p2.y;
+          t.points.push({ x: p1.x + vx, y: p1.y + vy, time: now });
+          if (t.points.length > 50) t.points.shift();
         }
       });
     }
 
-    // Rendering pipeline
+    const matchedTracks = new Set(tracksRef.current.map(t => t.id)); // For compatibility with rendering pipeline
+
+    // STEP 4: Render all tracks with premium forensic styling
     tracksRef.current.forEach(track => {
-      if (track.points.length === 0 || track.confidence < 0.2) return;
+      if (track.points.length === 0) return;
+
       const lastP = track.points[track.points.length - 1];
-      const cpX = oX + (lastP.x / 1000) * dW; const cpY = oY + (lastP.y / 1000) * dH;
-      const bW = (track.w / 1000) * dW; const bH = (track.h / 1000) * dH;
-      const speedKmh = Math.floor(track.velocity * fpsRef.current * 3.6);
 
-      ctx.globalAlpha = Math.max(0.7, track.confidence);
-      ctx.strokeStyle = track.isInfractor ? '#ef4444' : track.color;
-      ctx.lineWidth = track.isInfractor ? 4 : 2;
-      ctx.strokeRect(cpX - bW / 2, cpY - bH / 2, bW, bH);
+      // HUD ELASTICITY: Calculate smoothed visual dimensions
+      const lw = track.w;
+      const lh = track.h;
+      const lx = lastP.x - lw / 2;
+      const ly = lastP.y - lh / 2;
 
-      if (track.isInfractor) {
-        ctx.fillStyle = '#ef4444'; ctx.fillRect(cpX - bW / 2, cpY - bH / 2 - 20, bW, 20);
-        ctx.fillStyle = '#fff'; ctx.font = 'bold 9px monospace';
-        ctx.fillText(`ID:${track.id % 1000} | ${track.subType} | ${speedKmh} KM/H`, cpX - bW / 2 + 5, cpY - bH / 2 - 7);
+      const cpX = oX + (lx / 1000) * dW;
+      const cpY = oY + (ly / 1000) * dH;
+      const bW = (lw / 1000) * dW;
+      const bH = (lh / 1000) * dH;
+
+      // Calculate speed
+      const metersMovedPerFrame = track.velocity / PIXELS_PER_METER;
+      const speedKmh = Math.floor(metersMovedPerFrame * fpsRef.current * 3.6);
+
+      // STABLE OPACITY: High minimum with hysteresis to prevent flicker
+      let opacity = track.confidence;
+      if (track.age > 5) {
+        opacity = Math.max(0.95, track.confidence); // Very stable after initialization
       } else {
-        ctx.fillStyle = track.color; ctx.fillRect(cpX - bW / 2, cpY - bH / 2 - 15, bW, 15);
-        ctx.fillStyle = '#000'; ctx.font = 'bold 9px monospace';
-        ctx.fillText(`ID:${track.id % 1000} | ${track.label.toUpperCase()} | ${speedKmh} KM/H`, cpX - bW / 2 + 5, cpY - bH / 2 - 4);
+        opacity = Math.max(0.7, track.confidence); // Lower during warmup
+      }
+      const isInfractor = track.isInfractor;
+
+      ctx.globalAlpha = opacity;
+
+      if (isInfractor) {
+        // INFRACTOR RENDERING: Dynamic Red Glow + Double Vibrating Border
+        const vibrateOffset = Math.sin(Date.now() / 100) * 2; // Subtle vibration
+
+        // Outer Glow (Red Aura)
+        ctx.shadowColor = '#ef4444';
+        ctx.shadowBlur = 30;
+        ctx.shadowOffsetX = 0;
+        ctx.shadowOffsetY = 0;
+
+        // First Border (Thick Red)
+        ctx.strokeStyle = '#ef4444';
+        ctx.lineWidth = 5;
+        ctx.strokeRect(cpX + vibrateOffset, cpY + vibrateOffset, bW, bH);
+
+        // Second Border (Outer Thin Red - creates double-line effect)
+        ctx.strokeStyle = '#dc2626';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(cpX - 3 + vibrateOffset, cpY - 3 + vibrateOffset, bW + 6, bH + 6);
+
+        // Reset shadow
+        ctx.shadowBlur = 0;
+
+        // Corner Markers (Tactical Style)
+        const cornerSize = 15;
+        ctx.strokeStyle = '#fca5a5';
+        ctx.lineWidth = 3;
+        // Top-left
+        ctx.beginPath();
+        ctx.moveTo(cpX, cpY + cornerSize);
+        ctx.lineTo(cpX, cpY);
+        ctx.lineTo(cpX + cornerSize, cpY);
+        ctx.stroke();
+        // Top-right
+        ctx.beginPath();
+        ctx.moveTo(cpX + bW - cornerSize, cpY);
+        ctx.lineTo(cpX + bW, cpY);
+        ctx.lineTo(cpX + bW, cpY + cornerSize);
+        ctx.stroke();
+        // Bottom-right
+        ctx.beginPath();
+        ctx.moveTo(cpX + bW, cpY + bH - cornerSize);
+        ctx.lineTo(cpX + bW, cpY + bH);
+        ctx.lineTo(cpX + bW - cornerSize, cpY + bH);
+        ctx.stroke();
+        // Bottom-left
+        ctx.beginPath();
+        ctx.moveTo(cpX + cornerSize, cpY + bH);
+        ctx.lineTo(cpX, cpY + bH);
+        ctx.lineTo(cpX, cpY + bH - cornerSize);
+        ctx.stroke();
+
+        // Label Background (Red Alert Style)
+        ctx.fillStyle = '#dc2626';
+        ctx.fillRect(cpX, cpY - 24, bW, 22);
+
+        // Label Text
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 11px monospace';
+        ctx.fillText(`⚠ INFRACCIÓN | ${track.plate || 'ANALYZING'} | ${speedKmh} KM/H`, cpX + 5, cpY - 7);
+
+      } else {
+        // NORMAL VEHICLE RENDERING: Clean professional style
+        ctx.strokeStyle = track.color;
+        ctx.lineWidth = 2;
+        ctx.strokeRect(cpX, cpY, bW, bH);
+
+        // Label Background
+        ctx.fillStyle = track.color;
+        ctx.fillRect(cpX, cpY - 20, bW, 18);
+
+        // Label Text
+        ctx.fillStyle = '#000';
+        ctx.font = 'bold 10px monospace';
+        ctx.fillText(`${(track.subType || track.label).toUpperCase()} | ${speedKmh} KM/H`, cpX + 5, cpY - 7);
       }
 
-      if (track.label === 'person' && isOrtLoaded) {
-        ctx.beginPath(); ctx.strokeStyle = '#ec4899'; ctx.lineWidth = 1;
-        ctx.arc(cpX, cpY - bH / 4, bW / 4, 0, Math.PI * 2);
-        ctx.moveTo(cpX, cpY - bH / 8); ctx.lineTo(cpX, cpY + bH / 4);
-        ctx.moveTo(cpX - bW / 4, cpY); ctx.lineTo(cpX + bW / 4, cpY);
+      ctx.globalAlpha = 1.0;
+
+      // Snapshot capture (high frequency forensic buffer)
+      if (matchedTracks.has(track.id) && now - track.lastSnapshotTime > 150 && track.snapshots.length < 25 && track.confidence > 0.65) {
+        const snap = document.createElement('canvas');
+        snap.width = 400; snap.height = 300;
+        const trackScreenX = (lastP.x / 1000) * v.videoWidth - 40;
+        const trackScreenY = (lastP.y / 1000) * v.videoHeight - 40;
+        snap.getContext('2d')?.drawImage(v, trackScreenX, trackScreenY, 80, 80, 0, 0, 400, 300);
+        track.snapshots.push(snap.toDataURL('image/jpeg', 0.65).split(',')[1]);
+        track.lastSnapshotTime = now;
+      }
+
+      // Trigger forensic audit at age 50 for stable tracks
+      if (track.age === 50 && !track.analyzed && !processingRef.current && track.confidence > 0.8) {
+        runNeuralAudit(track);
+      }
+    });
+
+    // STEP 5: Draw All Detection Lines (multi-line system)
+    ctx.save();
+    detectionLines.forEach((line, index) => {
+      const lineY = oY + (line.y / 1000) * dH;
+
+      // Line style based on type and infraction priority
+      switch (line.type) {
+        case 'solid':
+          ctx.strokeStyle = '#ef4444'; // Red for solid lines
+          ctx.lineWidth = 4;
+          ctx.setLineDash([]);
+          break;
+        case 'stop':
+          ctx.strokeStyle = '#dc2626'; // Bright Red for STOP
+          ctx.lineWidth = 6;
+          ctx.setLineDash([]);
+          break;
+        case 'pedestrian':
+          ctx.strokeStyle = '#22d3ee'; // Cyan for Pedestrian zones
+          ctx.lineWidth = 8;
+          ctx.setLineDash([30, 20]); // Zebra pattern
+          break;
+        case 'bus-lane':
+          ctx.strokeStyle = '#f59e0b'; // Amber for Bus Lane
+          ctx.lineWidth = 5;
+          ctx.setLineDash([]);
+          break;
+        case 'loading-zone':
+          ctx.strokeStyle = '#a855f7'; // Purple for Loading zones
+          ctx.lineWidth = 3;
+          ctx.setLineDash([10, 10]);
+          break;
+        case 'speed-zone':
+          ctx.strokeStyle = '#22c55e'; // Green for Speed control
+          ctx.lineWidth = 2;
+          ctx.setLineDash([2, 5]);
+          break;
+        case 'dashed':
+          ctx.strokeStyle = '#f59e0b'; // Amber for lane dividers
+          ctx.lineWidth = 2;
+          ctx.setLineDash([15, 10]);
+          break;
+        default: // divider
+          ctx.strokeStyle = '#06b6d4'; // Cyan for simple dividers
+          ctx.lineWidth = 2;
+          ctx.setLineDash([10, 5]);
+          break;
+      }
+
+      ctx.globalAlpha = (line.type === 'solid' || line.type === 'stop') ? 0.8 : 0.5;
+      ctx.beginPath();
+      ctx.moveTo(0, lineY);
+      ctx.lineTo(canvas.width, lineY);
+      ctx.stroke();
+
+      // Line markers (ticks)
+      ctx.setLineDash([]);
+      ctx.lineWidth = 2;
+      for (let x = 0; x < canvas.width; x += 120) {
+        ctx.beginPath();
+        ctx.moveTo(x, lineY - 6);
+        ctx.lineTo(x, lineY + 6);
         ctx.stroke();
       }
 
-      if (matchedTracks.has(track.id) && now - track.lastSnapshotTime > 150 && track.snapshots.length < 20 && track.confidence > 0.7) {
-        const off = document.createElement('canvas'); off.width = 300; off.height = 300;
-        const octx = off.getContext('2d');
-        if (octx) {
-          const sx = (lastP.x / 1000) * v.videoWidth - 150; const sy = (lastP.y / 1000) * v.videoHeight - 150;
-          octx.drawImage(v, sx, sy, 300, 300, 0, 0, 300, 300);
-          track.snapshots.push(off.toDataURL('image/jpeg', 0.8));
-          track.lastSnapshotTime = now;
-        }
-      }
-      if (track.age === 50 && !track.analyzed && !processingRef.current) runNeuralAudit(track);
+      // Line label
+      ctx.fillStyle = ctx.strokeStyle;
+      ctx.font = 'bold 10px monospace';
+      ctx.globalAlpha = 0.9;
+      ctx.fillText(line.label, 15, lineY - 12);
     });
+    ctx.restore();
 
-    detectionLines.forEach(line => {
-      const lineY = oY + (line.y / 1000) * dH;
-      ctx.strokeStyle = line.infractionType ? '#ef4444' : '#22d3ee';
-      ctx.lineWidth = line.type === 'solid' ? 3 : 1;
-      if (line.type === 'dashed') ctx.setLineDash([15, 10]); else ctx.setLineDash([]);
-      ctx.beginPath(); ctx.moveTo(oX, lineY); ctx.lineTo(oX + dW, lineY); ctx.stroke();
-      ctx.fillStyle = ctx.strokeStyle; ctx.font = 'bold 9px monospace';
-      ctx.fillText(line.label, oX + 10, lineY - 5);
-    });
-
-    // Filtro de limpieza más permisivo para mantener tracks estables
-    tracksRef.current = tracksRef.current.filter(t =>
-      t.missedFrames < Math.max(60, inferParams.persistence * 2) && t.confidence > 0.02
-    );
-  }, [isPlaying, detectionLines, inferParams, selectedConfigs, isOrtLoaded, currentTime, duration]);
+    // STEP 6: Cleanup - Remove tracks that are truly lost (increased persistence)
+    tracksRef.current = tracksRef.current.filter(t => t.missedFrames < Math.max(30, inferParams.persistence) && t.confidence > 0.01);
+  }, [isPlaying, detectionLines, inferParams]);
 
   useEffect(() => {
     let handle: number;
@@ -1344,115 +1291,47 @@ const App = () => {
         </div>
 
         <div className="flex-1 p-6 space-y-8">
-          <div className="bg-slate-900/40 rounded-[32px] p-6 space-y-6 border border-white/5 shadow-2xl relative overflow-hidden group">
-            <div className="absolute inset-0 bg-gradient-to-br from-cyan-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
-            <div className="space-y-4">
-              <h3 className="text-[11px] font-black text-cyan-500 uppercase tracking-[0.2em] flex items-center gap-2 italic">
-                <ActivitySquare size={14} className="animate-pulse" /> CONFIGURACIÓN NEURAL
-              </h3>
-
-              <div className="flex items-center justify-between p-3 rounded-2xl bg-black/40 border border-white/5">
-                <span className="text-[9px] font-black text-slate-500 tracking-tighter uppercase whitespace-nowrap">MODO OPERATIVO</span>
-                <div className="flex gap-1 bg-slate-950 p-1 rounded-xl">
-                  {[
-                    { id: 'perf', label: 'FLUIDEZ', params: { confThreshold: 0.20, detectionSkip: 4, persistence: 30 }, mode: 'bytetrack' },
-                    { id: 'bal', label: 'AUTO', params: { confThreshold: 0.25, detectionSkip: 2, persistence: 60 }, mode: 'bytetrack' },
-                    { id: 'prec', label: 'PRECI', params: { confThreshold: 0.45, detectionSkip: 1, persistence: 90 }, mode: 'botsort' }
-                  ].map(preset => (
-                    <button
-                      key={preset.id}
-                      onClick={() => {
-                        setInferParams(preset.params);
-                        setTrackingMode(preset.mode as any);
-                      }}
-                      className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all ${inferParams.confThreshold === preset.params.confThreshold && inferParams.detectionSkip === preset.params.detectionSkip
-                        ? 'bg-cyan-500 text-black shadow-[0_0_15px_#22d3ee]'
-                        : 'text-slate-600 hover:text-slate-400'
-                        }`}
-                    >
-                      {preset.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            <div className="space-y-5">
-              <div className="space-y-2">
-                <div className="flex justify-between text-[10px] font-mono text-slate-400">
-                  <span className="flex items-center gap-2"><Target size={10} /> CONFIDENCIA_MIN</span>
-                  <span className="text-cyan-400">{Math.round(inferParams.confThreshold * 100)}%</span>
+          {/* Inference Engine Tuning Section - MOVED TO TOP */}
+          <div className="space-y-3">
+            <h3 className="text-[11px] font-black uppercase text-slate-600 tracking-widest flex items-center gap-2 px-2">
+              <Settings size={12} className="text-amber-500" /> MOTOR DE INFERENCIA (LOCAL)
+            </h3>
+            <div className="bg-slate-900/40 rounded-2xl p-4 space-y-4">
+              <div className="space-y-1">
+                <div className="flex justify-between text-[9px] font-bold text-slate-500 uppercase">
+                  <span>Umbral Confianza</span>
+                  <span className="text-cyan-400">{inferParams.confThreshold.toFixed(2)}</span>
                 </div>
                 <input
                   type="range" min="0.1" max="0.9" step="0.05"
                   value={inferParams.confThreshold}
-                  onChange={e => setInferParams(p => ({ ...p, confThreshold: parseFloat(e.target.value) }))}
-                  className="w-full h-1 bg-white/5 rounded-lg appearance-none cursor-pointer accent-cyan-500"
+                  onChange={(e) => setInferParams(p => ({ ...p, confThreshold: parseFloat(e.target.value) }))}
+                  className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-cyan-500"
                 />
               </div>
-
-              <div className="space-y-2">
-                <div className="flex justify-between text-[10px] font-mono text-slate-400">
-                  <span className="flex items-center gap-2"><Clock size={10} /> PERSISTENCIA_TRAZA</span>
-                  <span className="text-purple-400">{inferParams.persistence} F</span>
-                </div>
-                <input
-                  type="range" min="5" max="150" step="5"
-                  value={inferParams.persistence}
-                  onChange={e => setInferParams(p => ({ ...p, persistence: parseInt(e.target.value) }))}
-                  className="w-full h-1 bg-white/5 rounded-lg appearance-none cursor-pointer accent-purple-500"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <div className="flex justify-between text-[10px] font-mono text-slate-400">
-                  <span className="flex items-center gap-2"><ActivitySquare size={10} /> SALTO_INFERENCIA</span>
-                  <span className="text-amber-400">{inferParams.detectionSkip} F</span>
+              <div className="space-y-1">
+                <div className="flex justify-between text-[9px] font-bold text-slate-500 uppercase">
+                  <span>Frame Skip (Inferencia)</span>
+                  <span className="text-cyan-400">{inferParams.detectionSkip} F</span>
                 </div>
                 <input
                   type="range" min="1" max="10" step="1"
                   value={inferParams.detectionSkip}
-                  onChange={e => setInferParams(p => ({ ...p, detectionSkip: parseInt(e.target.value) }))}
-                  className="w-full h-1 bg-white/5 rounded-lg appearance-none cursor-pointer accent-amber-500"
+                  onChange={(e) => setInferParams(p => ({ ...p, detectionSkip: parseInt(e.target.value) }))}
+                  className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-cyan-500"
                 />
               </div>
-
-              <div className="space-y-3">
-                <div className="flex items-center justify-between p-3 rounded-2xl bg-black/40 border border-white/5">
-                  <span className="text-[9px] font-black text-slate-500 tracking-tighter uppercase whitespace-nowrap">ALGORITMO TRAQUEO</span>
-                  <div className="flex gap-1 bg-slate-950 p-1 rounded-xl">
-                    {['bytetrack', 'botsort'].map(m => (
-                      <button
-                        key={m}
-                        onClick={() => setTrackingMode(m as any)}
-                        className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all ${trackingMode === m ? 'bg-cyan-500 text-black shadow-[0_0_15px_#22d3ee]' : 'text-slate-600 hover:text-slate-400'}`}
-                      >
-                        {m}
-                      </button>
-                    ))}
-                  </div>
+              <div className="space-y-1">
+                <div className="flex justify-between text-[9px] font-bold text-slate-500 uppercase">
+                  <span>Persistencia de Track</span>
+                  <span className="text-cyan-400">{inferParams.persistence} F</span>
                 </div>
-                <p className="px-4 text-[9px] text-slate-500 italic leading-tight animate-in fade-in duration-500">
-                  {trackingMode === 'bytetrack'
-                    ? "ByteTrack: Recupera objetos usando detecciones de baja confianza. Excelente para tráfico denso y oclusiones constantes."
-                    : "BoT-SORT: Integra compensación de movimiento y refinamiento ReID. Máxima estabilidad en cámaras dinámicas o con vibración."}
-                </p>
-              </div>
-
-              <div className="flex items-center justify-between p-3 rounded-2xl bg-cyan-950/20 border border-cyan-500/10">
-                <div className="flex items-center gap-3">
-                  <Fingerprint size={16} className={isOrtLoaded ? "text-cyan-500" : "text-slate-600"} />
-                  <div className="flex flex-col">
-                    <span className="text-[10px] font-black text-white leading-none">YOLOv11+POSE</span>
-                    <span className="text-[8px] font-mono text-cyan-500/60 uppercase">{isOrtLoaded ? "Ready_State" : "Loading_Core..."}</span>
-                  </div>
-                </div>
-                <div className={`w-2 h-2 rounded-full ${isOrtLoaded ? "bg-cyan-500 animate-pulse shadow-[0_0_8px_#22d3ee]" : "bg-slate-700"}`} />
-              </div>
-
-              <div className="flex flex-col gap-2 pt-2 border-t border-white/5">
-                <StatusBadge label="RADAR_ACTIVE" active={isPlaying} icon={Wifi} />
-                <StatusBadge label="AI_CORE_SYNC" active={isAnalyzing} color="red" pulse={isAnalyzing} icon={BrainCircuit} />
+                <input
+                  type="range" min="5" max="100" step="5"
+                  value={inferParams.persistence}
+                  onChange={(e) => setInferParams(p => ({ ...p, persistence: parseInt(e.target.value) }))}
+                  className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-cyan-500"
+                />
               </div>
             </div>
           </div>
@@ -1622,6 +1501,10 @@ const App = () => {
             </div>
           </div>
 
+          <div className="flex flex-col gap-2">
+            <StatusBadge label="RADAR_ACTIVE" active={isPlaying} />
+            <StatusBadge label="AI_CORE_SYNC" active={isAnalyzing} color="red" pulse={isAnalyzing} />
+          </div>
         </div>
 
         <div className="p-6 border-t border-white/5 mt-auto">
@@ -1633,18 +1516,15 @@ const App = () => {
 
       {/* MAIN VIEWPORT - Full-Screen High-Fidelity Video */}
       <main className="flex-1 relative flex flex-col bg-black overflow-hidden group/viewport">
-        <div className="absolute top-6 left-6 right-6 z-40 flex justify-end pointer-events-none items-start">
-          {isAnalyzing && (
-            <div className="flex items-center gap-4 bg-black/80 backdrop-blur-xl px-5 py-2.5 rounded-2xl border border-red-500/30 animate-in slide-in-from-top-4 duration-500 shadow-[0_0_20px_rgba(239,68,68,0.1)]">
-              <div className="w-6 h-6 border-2 border-red-500/20 border-t-red-500 rounded-full animate-spin flex items-center justify-center">
-                <BrainCircuit size={12} className="text-cyan-400 animate-pulse" />
-              </div>
-              <div className="flex flex-col items-end">
-                <span className="text-[9px] font-black text-red-500 uppercase tracking-widest">{statusMsg}</span>
-                <span className="text-[8px] font-mono text-cyan-500/40 uppercase">GEMINI_NEURAL_AUDIT</span>
-              </div>
-            </div>
-          )}
+        <canvas
+          ref={canvasRef}
+          className="w-full h-full object-contain"
+        />
+        <div className="absolute top-6 left-6 right-6 z-40 flex justify-between pointer-events-none items-start">
+          <div className="flex items-center gap-3 bg-black/60 backdrop-blur-xl px-4 py-2 rounded-2xl border border-cyan-500/20">
+            <div className="w-2 h-2 bg-cyan-500 rounded-full animate-pulse shadow-[0_0_10px_#22d3ee]" />
+            <span className="text-[9px] font-mono text-cyan-400/80 uppercase tracking-wider">LIVE :: {fps} FPS</span>
+          </div>
         </div>
 
         {/* Video Viewport - Absolute Protagonist */}
@@ -1678,115 +1558,72 @@ const App = () => {
               {/* Subtle Grid Overlay */}
               <div className="absolute inset-0 opacity-5 pointer-events-none hud-grid" />
 
+              {/* Forensic Analysis Indicator */}
+              {isAnalyzing && (
+                <div className="absolute bottom-8 right-8 z-50 bg-black/95 border-2 border-red-600/40 p-6 rounded-[30px] flex items-center gap-5 shadow-[0_0_40px_rgba(220,38,38,0.4)] animate-in slide-in-from-bottom-10">
+                  <div className="w-12 h-12 border-t-3 border-red-600 rounded-full animate-spin flex items-center justify-center">
+                    <BrainCircuit size={24} className="text-cyan-400 animate-pulse" />
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-[11px] font-black text-red-500 uppercase tracking-widest">{statusMsg}</span>
+                    <span className="text-[11px] font-mono text-cyan-500/60 uppercase">Análisis Forense Neural</span>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
 
-        <div className="h-36 bg-[#020617]/98 border-t border-white/5 flex flex-col z-50">
-          {/* Top Row: Status Badges + Controls */}
-          <div className="flex-1 flex items-center justify-between px-12">
-            {/* Left: Status Badges + Playback */}
-            <div className="flex items-center gap-6 w-1/3">
-              {/* LIVE & FPS Badges */}
-              <div className="flex items-center gap-2">
-                <div className="flex items-center gap-2 bg-black/60 backdrop-blur-xl px-3 py-1.5 rounded-full border border-cyan-500/20">
-                  <div className="w-1.5 h-1.5 bg-cyan-500 rounded-full animate-pulse shadow-[0_0_8px_#22d3ee]" />
-                  <span className="text-[9px] font-mono text-cyan-400/80 uppercase tracking-wider font-black">LIVE</span>
-                </div>
-                <div className="flex items-center gap-2 bg-black/60 backdrop-blur-xl px-3 py-1.5 rounded-full border border-white/10">
-                  <Activity size={10} className="text-slate-400" />
-                  <span className="text-[9px] font-mono text-slate-400 uppercase tracking-wider font-black">{fps} FPS</span>
-                </div>
-              </div>
-
-              {/* Play/Pause Button */}
-              <button onClick={() => isPlaying ? safePause() : safePlay()}
-                className={`w-12 h-12 rounded-xl flex items-center justify-center transition-all ${isPlaying ? 'bg-red-800 shadow-neon' : 'bg-cyan-600 text-black shadow-neon'}`}>
-                {isPlaying ? <Pause size={24} /> : <Play size={24} className="ml-0.5" />}
-              </button>
-
-              {/* Status Text */}
-              <div className="flex flex-col">
-                <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest">Status de Feed</span>
-                <span className="text-[14px] font-black italic text-white/95 tracking-tight uppercase whitespace-nowrap">
-                  {source === 'live' ? 'Neural_Live_Feed' : 'Forensic_Buffer'}
-                </span>
-              </div>
-            </div>
-
-            {/* Center: Detections & Identity */}
-            <div className="flex flex-col items-center justify-center gap-1 w-1/3">
-              <div className="flex items-center gap-3 bg-white/5 px-4 py-1.5 rounded-full border border-white/10 mb-1">
-                <Target size={12} className="text-purple-400" />
-                <span className="text-[9px] font-black text-white/80 uppercase tracking-widest">SENTINEL_V15_NODE</span>
-              </div>
-              <div className="flex gap-8 border-t border-white/5 pt-2">
-                <div className="text-center">
-                  <span className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] block">Detecciones</span>
-                  <span className="text-2xl font-mono font-black text-cyan-500 leading-none">{cumulativeDetections}</span>
-                </div>
-                <div className="text-center">
-                  <span className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] block">Expedientes</span>
-                  <span className="text-2xl font-mono font-black text-red-600 leading-none">{cumulativeExpedientes}</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Right: Processor Info + Upload */}
-            <div className="flex items-center justify-end gap-6 w-1/3">
-              <div className="flex flex-col items-end gap-1">
-                <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest">Processor_Unit</span>
-                <span className="text-[14px] font-black italic text-cyan-500 tracking-tight uppercase">DAGANZO_NODE_01</span>
-              </div>
-
-              <button onClick={() => document.getElementById('f-up-main')?.click()}
-                className="w-12 h-12 bg-white/5 rounded-xl hover:bg-white/10 text-slate-500 transition-all border border-white/10 flex items-center justify-center shadow-neon group">
-                <Upload size={20} className="group-hover:text-cyan-400 transition-colors" />
-                <input id="f-up-main" type="file" className="hidden" accept="video/*" onChange={e => { const f = e.target.files?.[0]; if (f) { setVideoUrl(URL.createObjectURL(f)); setSource('upload'); } }} />
-              </button>
+        <div className="h-32 bg-[#020617]/98 border-t border-white/5 flex items-center justify-between px-12 z-50">
+          {/* Left: Playback & Status */}
+          <div className="flex items-center gap-8 w-1/3">
+            <button onClick={() => isPlaying ? safePause() : safePlay()}
+              className={`w-14 h-14 rounded-2xl flex items-center justify-center transition-all ${isPlaying ? 'bg-red-800 shadow-neon' : 'bg-cyan-600 text-black shadow-neon'}`}>
+              {isPlaying ? <Pause size={28} /> : <Play size={28} className="ml-1" />}
+            </button>
+            <div className="flex flex-col">
+              <span className="text-[11px] font-black text-slate-600 uppercase tracking-widest mb-1">Status de Feed</span>
+              <span className="text-xl font-black italic text-white/95 tracking-tighter uppercase whitespace-nowrap">
+                {source === 'live' ? 'Neural_Live_Feed' : source === 'upload' ? 'Forensic_Buffer' : 'System_Standby'}
+              </span>
             </div>
           </div>
 
-          {/* Bottom Row: Neural Timeline with Timecode */}
-          <div className="px-12 pb-4">
-            <div className="relative">
-              {/* Timeline Bar */}
-              <div className="h-2 w-full bg-white/5 relative group cursor-pointer overflow-hidden rounded-full">
-                <div
-                  className="h-full bg-gradient-to-r from-cyan-600 to-cyan-400 shadow-[0_0_15px_#06b6d4] transition-all duration-300 relative rounded-full"
-                  style={{ width: `${(currentTime / duration) * 100}%` }}
-                >
-                  <div className="absolute right-0 top-0 bottom-0 w-1 bg-white rounded-full shadow-[0_0_8px_#fff]" />
-                </div>
-                <input
-                  type="range" min="0" max={duration || 100} step="0.1"
-                  value={currentTime}
-                  onChange={(e) => {
-                    const t = parseFloat(e.target.value);
-                    if (videoRef.current) videoRef.current.currentTime = t;
-                    setCurrentTime(t);
-                  }}
-                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-                />
+          {/* Center: Detections & Identity */}
+          <div className="flex flex-col items-center justify-center gap-1 w-1/3">
+            <div className="flex items-center gap-3 bg-white/5 px-4 py-1.5 rounded-full border border-white/10 mb-1">
+              <Target size={12} className="text-purple-400" />
+              <span className="text-[9px] font-black text-white/80 uppercase tracking-widest">SENTINEL_V15_NODE</span>
+            </div>
+            <div className="flex gap-8 border-t border-white/5 pt-2">
+              <div className="text-center">
+                <span className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] block">Detecciones</span>
+                <span className="text-2xl font-mono font-black text-cyan-500 leading-none">{cumulativeDetections}</span>
               </div>
-
-              {/* Timecode Display */}
-              <div className="flex justify-between items-center mt-1.5">
-                <span className="text-[9px] font-mono text-cyan-400 font-black tracking-wider">
-                  {Math.floor(currentTime / 60).toString().padStart(2, '0')}:{Math.floor(currentTime % 60).toString().padStart(2, '0')}
-                </span>
-                <span className="text-[8px] font-mono text-slate-600 uppercase tracking-widest">Neural Timeline</span>
-                <span className="text-[9px] font-mono text-slate-500 font-black tracking-wider">
-                  {Math.floor(duration / 60).toString().padStart(2, '0')}:{Math.floor(duration % 60).toString().padStart(2, '0')}
-                </span>
+              <div className="text-center">
+                <span className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] block">Expedientes</span>
+                <span className="text-2xl font-mono font-black text-red-600 leading-none">{cumulativeExpedientes}</span>
               </div>
             </div>
+          </div>
+
+          {/* Right: Actions */}
+          <div className="flex items-center justify-end gap-6 w-1/3">
+            <div className="hidden lg:flex flex-col text-right">
+              <span className="text-[11px] font-black text-slate-600 uppercase tracking-widest mb-1">Processor_Unit</span>
+              <span className="text-[12px] font-mono text-cyan-400/60 uppercase">Daganzo_Node_01</span>
+            </div>
+            <button onClick={() => document.getElementById('f-up-main')?.click()}
+              className="w-14 h-14 bg-white/5 rounded-2xl hover:bg-white/10 text-slate-500 transition-all border border-white/10 flex items-center justify-center shadow-neon group">
+              <Upload size={24} className="group-hover:text-cyan-400 transition-colors" />
+              <input id="f-up-main" type="file" className="hidden" accept="video/*" onChange={e => { const f = e.target.files?.[0]; if (f) { setVideoUrl(URL.createObjectURL(f)); setSource('upload'); } }} />
+            </button>
           </div>
         </div>
-      </main >
+      </main>
 
       {/* REGISTRY SIDEBAR */}
-      < aside className="w-full lg:w-96 border-l border-white/5 flex flex-col z-50 bg-[#020617]/98 h-1/2 lg:h-full" >
+      <aside className="w-full lg:w-96 border-l border-white/5 flex flex-col z-50 bg-[#020617]/98 h-1/2 lg:h-full">
         <div className="p-8 border-b border-white/5 flex items-center justify-between bg-red-950/10">
           <div className="flex items-center gap-4 text-red-500">
             <div className="w-3 h-3 bg-red-600 rounded-full animate-pulse shadow-[0_0_10px_#dc2626]" />
@@ -1810,210 +1647,208 @@ const App = () => {
             </div>
           ))}
         </div>
-      </aside >
+      </aside>
 
       {/* DETAIL MODAL - FORENSIC REPORT DESIGN */}
-      {
-        selectedLog && (
-          <div className="fixed inset-0 z-[200] bg-black/95 flex items-center justify-center p-6 backdrop-blur-3xl animate-in fade-in duration-500">
-            <div className="bg-[#050914] w-full max-w-7xl h-[90vh] rounded-[60px] border border-white/5 overflow-hidden flex flex-col shadow-2xl relative animate-in zoom-in-95">
+      {selectedLog && (
+        <div className="fixed inset-0 z-[200] bg-black/95 flex items-center justify-center p-6 backdrop-blur-3xl animate-in fade-in duration-500">
+          <div className="bg-[#050914] w-full max-w-7xl h-[90vh] rounded-[60px] border border-white/5 overflow-hidden flex flex-col shadow-2xl relative animate-in zoom-in-95">
 
-              <button onClick={() => setSelectedLog(null)} className="absolute top-6 right-6 z-[210] p-3 bg-slate-900/90 rounded-full hover:bg-red-700 text-white transition-all shadow-neon border border-white/10">
-                <X size={24} />
-              </button>
+            <button onClick={() => setSelectedLog(null)} className="absolute top-6 right-6 z-[210] p-3 bg-slate-900/90 rounded-full hover:bg-red-700 text-white transition-all shadow-neon border border-white/10">
+              <X size={24} />
+            </button>
 
-              <div className="flex-1 p-6 lg:p-8 flex flex-col lg:flex-row gap-6 overflow-hidden">
+            <div className="flex-1 p-6 lg:p-8 flex flex-col lg:flex-row gap-6 overflow-hidden">
 
-                {/* Visual Evidence Section (Left) */}
-                <div className="flex-1 flex flex-col gap-4 overflow-y-auto custom-scrollbar">
+              {/* Visual Evidence Section (Left) */}
+              <div className="flex-1 flex flex-col gap-4 overflow-y-auto custom-scrollbar">
 
-                  {/* Header: Evidence Clip Info */}
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-cyan-500 font-black uppercase text-sm tracking-[0.2em] flex items-center gap-4 italic">
-                      <Video size={20} className="animate-pulse" /> EVIDENCE CLIP (HD_10S)
-                    </h3>
-                    <div className="flex gap-4">
-                      <span className="bg-slate-900 border border-white/10 px-4 py-1.5 rounded-xl text-[12px] font-mono text-slate-400 flex items-center gap-2">
-                        <Clock size={12} /> {selectedLog.time}
-                      </span>
-                      <span className="bg-slate-900 border border-white/10 px-4 py-1.5 rounded-xl text-[12px] font-mono text-purple-400 flex items-center gap-2">
-                        <Ruler size={12} /> 3M_LANE_CALIB
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Main Visual Buffer */}
-                  <div className="relative bg-[#0a0a0a] rounded-[60px] overflow-hidden border border-white/10 shadow-[0_0_80px_rgba(34,211,238,0.1)] group">
-
-                    {/* Red Banner - Top Center */}
-                    <div className="absolute top-0 left-0 right-0 p-8 flex justify-center pointer-events-none z-20">
-                      <div className="bg-red-700 text-white px-10 py-4 rounded-b-[40px] font-black text-lg uppercase tracking-tighter shadow-2xl text-center leading-tight max-w-[80%]">
-                        {selectedLog.legalArticle || 'ART. 151 DEL REGLAMENTO GENERAL DE CIRCULACIÓN'}
-                      </div>
-                    </div>
-
-                    {/* The Video/Image */}
-                    <div className="aspect-video relative">
-                      {selectedLog.videoUrl ? (
-                        <>
-                          <video
-                            ref={(el) => {
-                              if (el) {
-                                el.onloadedmetadata = () => { };
-                                el.ontimeupdate = () => { };
-                              }
-                            }}
-                            src={selectedLog.videoUrl}
-                            autoPlay
-                            loop
-                            muted
-                            className="w-full h-full object-contain brightness-110 contrast-125"
-                          />
-
-                          {/* Video Timeline Controls */}
-                          <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 to-transparent p-4 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <div className="flex items-center gap-3">
-                              <button className="w-8 h-8 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 transition-colors">
-                                <Play size={14} className="text-white" />
-                              </button>
-                              <div className="flex-1 h-1 bg-white/20 rounded-full overflow-hidden cursor-pointer group/timeline">
-                                <div className="h-full bg-cyan-500 w-1/2" />
-                              </div>
-                              <span className="text-xs font-mono text-white/60">00:00 / 00:10</span>
-                            </div>
-                          </div>
-                        </>
-                      ) : (
-                        <img src={selectedLog.image} className="w-full h-full object-contain" />
-                      )}
-                    </div>
-
-                    <div className="absolute inset-0 bg-red-600/5 pointer-events-none" />
-                  </div>
-
-                  {/* Metadata Section Below Video */}
-                  <div className="bg-[#0a0a0a]/50 p-10 rounded-[50px] border border-white/5 space-y-4">
-                    <div className="text-cyan-500 font-black uppercase text-sm tracking-[0.4em] italic flex items-center gap-2">
-                      <Target size={16} /> {selectedLog.vehicleType} / FORENSIC_CALIB
-                    </div>
-                    <h2 className="text-5xl lg:text-6xl font-black italic text-white tracking-tighter uppercase font-mono">
-                      {selectedLog.plate}
-                    </h2>
-                  </div>
-
-                  {/* Sensor Pillars (Vertical Capsule Shapes) */}
-                  <div className="grid grid-cols-4 gap-6 px-2">
-                    {/* Sensor 1 */}
-                    <div className="bg-[#0a0a0a] aspect-[3/4.5] rounded-[60px] border border-white/5 flex flex-col items-center justify-between py-10 text-center group transition-transform hover:scale-105">
-                      <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest font-mono">Calibración</span>
-                      <div className="flex flex-col items-center">
-                        <span className="text-[16px] font-black text-purple-500 uppercase leading-none">CARRIL</span>
-                        <span className="text-[18px] font-black text-purple-500 font-mono">3.0M</span>
-                      </div>
-                      <div className="w-2 h-2 rounded-full bg-purple-500/30 border border-purple-500 animate-pulse" />
-                    </div>
-
-                    {/* Sensor 2 */}
-                    <div className="bg-[#0a0a0a] aspect-[3/4.5] rounded-[60px] border border-white/5 flex flex-col items-center justify-between py-10 text-center transition-transform hover:scale-105">
-                      <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest font-mono">Velocidad_Est.</span>
-                      <div className="flex flex-col items-center">
-                        <span className="text-4xl font-mono font-black text-amber-500 leading-none">{selectedLog.telemetry?.speedEstimated.replace(' km/h', '')}</span>
-                        <span className="text-[14px] font-black text-amber-500/50 uppercase font-mono">km/h</span>
-                      </div>
-                      <Gauge size={18} className="text-amber-500/40" />
-                    </div>
-
-                    {/* Sensor 3 */}
-                    <div className="bg-[#0a0a0a] aspect-[3/4.5] rounded-[60px] border border-white/5 flex flex-col items-center justify-between py-10 text-center transition-transform hover:scale-105">
-                      <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest font-mono">Confianza_AI</span>
-                      <span className="text-4xl font-mono font-black text-cyan-400 leading-none">{(selectedLog.confidence * 100).toFixed(0)}%</span>
-                      <div className="w-12 h-1 bg-cyan-500/20 rounded-full overflow-hidden">
-                        <div className="h-full bg-cyan-500" style={{ width: `${selectedLog.confidence * 100}%` }} />
-                      </div>
-                    </div>
-
-                    {/* Sensor 4 */}
-                    <div className="bg-[#0a0a0a] aspect-[3/4.5] rounded-[60px] border border-white/5 flex flex-col items-center justify-between py-10 text-center transition-transform hover:scale-105">
-                      <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest font-mono">Severidad</span>
-                      <span className="text-[16px] font-black text-red-600 uppercase font-mono leading-none tracking-tighter whitespace-nowrap">{selectedLog.severity}</span>
-                      <AlertTriangle size={20} className="text-red-600 animate-bounce" />
-                    </div>
-                  </div>
-
-                  {/* NEURAL FORENSIC BUFFER: Multiple snapshots display */}
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between px-4">
-                      <h3 className="text-cyan-500 font-black uppercase text-[12px] tracking-[0.3em] flex items-center gap-3 italic">
-                        <Binary size={16} className="text-cyan-500" /> NEURAL_FORENSIC_BUFFER [BIF]
-                      </h3>
-                      <span className="text-[11px] font-mono text-slate-500 uppercase">{selectedLog.snapshots?.length || 0} SECUENTIAL_FRAMES_CAPTURED</span>
-                    </div>
-                    <div className="flex gap-4 overflow-x-auto pb-4 custom-scrollbar snap-x">
-                      {selectedLog.snapshots?.map((snap, i) => (
-                        <div key={i} className="min-w-[120px] aspect-[4/3] bg-slate-900 rounded-2xl border border-white/10 overflow-hidden snap-center group relative cursor-pointer hover:border-cyan-500/50 transition-all shrink-0">
-                          <img src={`data:image/jpeg;base64,${snap}`} className="w-full h-full object-cover grayscale brightness-110 contrast-125 group-hover:grayscale-0 transition-all" />
-                          <div className="absolute bottom-1 right-2 text-[10px] font-mono text-white/40">F_{i.toString().padStart(2, '0')}</div>
-                        </div>
-                      ))}
-                      {(!selectedLog.snapshots || selectedLog.snapshots.length === 0) && (
-                        <div className="w-full py-12 flex flex-col items-center justify-center border border-dashed border-white/5 rounded-3xl text-slate-600">
-                          <ScanLine size={32} className="mb-2 opacity-20" />
-                          <span className="text-[12px] font-black uppercase tracking-widest">No BIF Data Available</span>
-                        </div>
-                      )}
-                    </div>
+                {/* Header: Evidence Clip Info */}
+                <div className="flex items-center justify-between">
+                  <h3 className="text-cyan-500 font-black uppercase text-sm tracking-[0.2em] flex items-center gap-4 italic">
+                    <Video size={20} className="animate-pulse" /> EVIDENCE CLIP (HD_10S)
+                  </h3>
+                  <div className="flex gap-4">
+                    <span className="bg-slate-900 border border-white/10 px-4 py-1.5 rounded-xl text-[12px] font-mono text-slate-400 flex items-center gap-2">
+                      <Clock size={12} /> {selectedLog.time}
+                    </span>
+                    <span className="bg-slate-900 border border-white/10 px-4 py-1.5 rounded-xl text-[12px] font-mono text-purple-400 flex items-center gap-2">
+                      <Ruler size={12} /> 3M_LANE_CALIB
+                    </span>
                   </div>
                 </div>
 
-                {/* Narrative Report Section (Right side) */}
-                <div className="w-full lg:w-[480px] flex flex-col gap-10 lg:pt-2">
+                {/* Main Visual Buffer */}
+                <div className="relative bg-[#0a0a0a] rounded-[60px] overflow-hidden border border-white/10 shadow-[0_0_80px_rgba(34,211,238,0.1)] group">
 
-                  <div className="space-y-6">
-                    <h3 className="text-red-500 font-black uppercase text-sm tracking-[0.2em] italic flex items-center gap-4">
-                      <AlertTriangle size={20} className="text-red-600 animate-pulse" /> FORENSIC EVIDENCE REPORT
-                    </h3>
-                    <div className="bg-[#0c0c0c] p-10 lg:p-14 rounded-[50px] border border-red-900/10 shadow-inner relative">
-                      <p className="text-slate-100 italic text-2xl lg:text-3xl leading-relaxed font-serif">
-                        "{selectedLog.description}"
-                      </p>
+                  {/* Red Banner - Top Center */}
+                  <div className="absolute top-0 left-0 right-0 p-8 flex justify-center pointer-events-none z-20">
+                    <div className="bg-red-700 text-white px-10 py-4 rounded-b-[40px] font-black text-lg uppercase tracking-tighter shadow-2xl text-center leading-tight max-w-[80%]">
+                      {selectedLog.legalArticle || 'ART. 151 DEL REGLAMENTO GENERAL DE CIRCULACIÓN'}
                     </div>
                   </div>
 
-                  {/* Evidence Log List */}
-                  <div className="flex-1 p-8 bg-[#0a0a0a] rounded-[50px] border border-white/5 flex flex-col overflow-hidden">
-                    <h3 className="text-[12px] font-black uppercase text-slate-500 flex items-center gap-4 italic tracking-widest mb-6 border-b border-white/5 pb-4">
-                      <Terminal size={18} className="text-cyan-500" /> ORDERED_EVIDENCE_LOG
-                    </h3>
-                    <div className="space-y-4 overflow-y-auto custom-scrollbar pr-2">
-                      {selectedLog.reasoning?.map((r, i) => (
-                        <div key={i} className="flex gap-4 text-[13px] font-mono leading-relaxed py-3 border-b border-white/5 last:border-0 text-slate-400">
-                          <span className="text-red-600 font-black h-fit shrink-0">_&gt;</span>
-                          <span>{r}</span>
+                  {/* The Video/Image */}
+                  <div className="aspect-video relative">
+                    {selectedLog.videoUrl ? (
+                      <>
+                        <video
+                          ref={(el) => {
+                            if (el) {
+                              el.onloadedmetadata = () => { };
+                              el.ontimeupdate = () => { };
+                            }
+                          }}
+                          src={selectedLog.videoUrl}
+                          autoPlay
+                          loop
+                          muted
+                          className="w-full h-full object-contain brightness-110 contrast-125"
+                        />
+
+                        {/* Video Timeline Controls */}
+                        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 to-transparent p-4 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <div className="flex items-center gap-3">
+                            <button className="w-8 h-8 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 transition-colors">
+                              <Play size={14} className="text-white" />
+                            </button>
+                            <div className="flex-1 h-1 bg-white/20 rounded-full overflow-hidden cursor-pointer group/timeline">
+                              <div className="h-full bg-cyan-500 w-1/2" />
+                            </div>
+                            <span className="text-xs font-mono text-white/60">00:00 / 00:10</span>
+                          </div>
                         </div>
-                      ))}
+                      </>
+                    ) : (
+                      <img src={selectedLog.image} className="w-full h-full object-contain" />
+                    )}
+                  </div>
+
+                  <div className="absolute inset-0 bg-red-600/5 pointer-events-none" />
+                </div>
+
+                {/* Metadata Section Below Video */}
+                <div className="bg-[#0a0a0a]/50 p-10 rounded-[50px] border border-white/5 space-y-4">
+                  <div className="text-cyan-500 font-black uppercase text-sm tracking-[0.4em] italic flex items-center gap-2">
+                    <Target size={16} /> {selectedLog.vehicleType} / FORENSIC_CALIB
+                  </div>
+                  <h2 className="text-5xl lg:text-6xl font-black italic text-white tracking-tighter uppercase font-mono">
+                    {selectedLog.plate}
+                  </h2>
+                </div>
+
+                {/* Sensor Pillars (Vertical Capsule Shapes) */}
+                <div className="grid grid-cols-4 gap-6 px-2">
+                  {/* Sensor 1 */}
+                  <div className="bg-[#0a0a0a] aspect-[3/4.5] rounded-[60px] border border-white/5 flex flex-col items-center justify-between py-10 text-center group transition-transform hover:scale-105">
+                    <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest font-mono">Calibración</span>
+                    <div className="flex flex-col items-center">
+                      <span className="text-[16px] font-black text-purple-500 uppercase leading-none">CARRIL</span>
+                      <span className="text-[18px] font-black text-purple-500 font-mono">3.0M</span>
+                    </div>
+                    <div className="w-2 h-2 rounded-full bg-purple-500/30 border border-purple-500 animate-pulse" />
+                  </div>
+
+                  {/* Sensor 2 */}
+                  <div className="bg-[#0a0a0a] aspect-[3/4.5] rounded-[60px] border border-white/5 flex flex-col items-center justify-between py-10 text-center transition-transform hover:scale-105">
+                    <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest font-mono">Velocidad_Est.</span>
+                    <div className="flex flex-col items-center">
+                      <span className="text-4xl font-mono font-black text-amber-500 leading-none">{selectedLog.telemetry?.speedEstimated.replace(' km/h', '')}</span>
+                      <span className="text-[14px] font-black text-amber-500/50 uppercase font-mono">km/h</span>
+                    </div>
+                    <Gauge size={18} className="text-amber-500/40" />
+                  </div>
+
+                  {/* Sensor 3 */}
+                  <div className="bg-[#0a0a0a] aspect-[3/4.5] rounded-[60px] border border-white/5 flex flex-col items-center justify-between py-10 text-center transition-transform hover:scale-105">
+                    <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest font-mono">Confianza_AI</span>
+                    <span className="text-4xl font-mono font-black text-cyan-400 leading-none">{(selectedLog.confidence * 100).toFixed(0)}%</span>
+                    <div className="w-12 h-1 bg-cyan-500/20 rounded-full overflow-hidden">
+                      <div className="h-full bg-cyan-500" style={{ width: `${selectedLog.confidence * 100}%` }} />
                     </div>
                   </div>
 
-                  {/* Certification & Validating Action */}
-                  <div className="space-y-6">
-                    <div className="flex items-center gap-6 p-8 bg-slate-950/40 rounded-[40px] border border-white/5">
-                      <DaganzoEmblem className="w-12 h-14 opacity-50" />
-                      <div className="flex flex-col">
-                        <span className="text-[12px] font-black text-white/30 uppercase tracking-[0.2em]">CERTIFICADO POR</span>
-                        <span className="text-[11px] font-black text-cyan-500 uppercase">P.L. DAGANZO DE ARRIBA</span>
+                  {/* Sensor 4 */}
+                  <div className="bg-[#0a0a0a] aspect-[3/4.5] rounded-[60px] border border-white/5 flex flex-col items-center justify-between py-10 text-center transition-transform hover:scale-105">
+                    <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest font-mono">Severidad</span>
+                    <span className="text-[16px] font-black text-red-600 uppercase font-mono leading-none tracking-tighter whitespace-nowrap">{selectedLog.severity}</span>
+                    <AlertTriangle size={20} className="text-red-600 animate-bounce" />
+                  </div>
+                </div>
+
+                {/* NEURAL FORENSIC BUFFER: Multiple snapshots display */}
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between px-4">
+                    <h3 className="text-cyan-500 font-black uppercase text-[12px] tracking-[0.3em] flex items-center gap-3 italic">
+                      <Binary size={16} className="text-cyan-500" /> NEURAL_FORENSIC_BUFFER [BIF]
+                    </h3>
+                    <span className="text-[11px] font-mono text-slate-500 uppercase">{selectedLog.snapshots?.length || 0} SECUENTIAL_FRAMES_CAPTURED</span>
+                  </div>
+                  <div className="flex gap-4 overflow-x-auto pb-4 custom-scrollbar snap-x">
+                    {selectedLog.snapshots?.map((snap, i) => (
+                      <div key={i} className="min-w-[120px] aspect-[4/3] bg-slate-900 rounded-2xl border border-white/10 overflow-hidden snap-center group relative cursor-pointer hover:border-cyan-500/50 transition-all shrink-0">
+                        <img src={`data:image/jpeg;base64,${snap}`} className="w-full h-full object-cover grayscale brightness-110 contrast-125 group-hover:grayscale-0 transition-all" />
+                        <div className="absolute bottom-1 right-2 text-[10px] font-mono text-white/40">F_{i.toString().padStart(2, '0')}</div>
                       </div>
-                    </div>
-
-                    <button onClick={() => setSelectedLog(null)} className="w-full py-10 bg-[#b91c1c] text-white rounded-[45px] font-black uppercase tracking-[0.5em] text-3xl shadow-[0_20px_60px_rgba(185,28,28,0.3)] hover:bg-red-600 hover:scale-[1.01] transition-all transform active:scale-95 leading-none">
-                      VALIDAR EXPEDIENTE
-                    </button>
+                    ))}
+                    {(!selectedLog.snapshots || selectedLog.snapshots.length === 0) && (
+                      <div className="w-full py-12 flex flex-col items-center justify-center border border-dashed border-white/5 rounded-3xl text-slate-600">
+                        <ScanLine size={32} className="mb-2 opacity-20" />
+                        <span className="text-[12px] font-black uppercase tracking-widest">No BIF Data Available</span>
+                      </div>
+                    )}
                   </div>
+                </div>
+              </div>
+
+              {/* Narrative Report Section (Right side) */}
+              <div className="w-full lg:w-[480px] flex flex-col gap-10 lg:pt-2">
+
+                <div className="space-y-6">
+                  <h3 className="text-red-500 font-black uppercase text-sm tracking-[0.2em] italic flex items-center gap-4">
+                    <AlertTriangle size={20} className="text-red-600 animate-pulse" /> FORENSIC EVIDENCE REPORT
+                  </h3>
+                  <div className="bg-[#0c0c0c] p-10 lg:p-14 rounded-[50px] border border-red-900/10 shadow-inner relative">
+                    <p className="text-slate-100 italic text-2xl lg:text-3xl leading-relaxed font-serif">
+                      "{selectedLog.description}"
+                    </p>
+                  </div>
+                </div>
+
+                {/* Evidence Log List */}
+                <div className="flex-1 p-8 bg-[#0a0a0a] rounded-[50px] border border-white/5 flex flex-col overflow-hidden">
+                  <h3 className="text-[12px] font-black uppercase text-slate-500 flex items-center gap-4 italic tracking-widest mb-6 border-b border-white/5 pb-4">
+                    <Terminal size={18} className="text-cyan-500" /> ORDERED_EVIDENCE_LOG
+                  </h3>
+                  <div className="space-y-4 overflow-y-auto custom-scrollbar pr-2">
+                    {selectedLog.reasoning?.map((r, i) => (
+                      <div key={i} className="flex gap-4 text-[13px] font-mono leading-relaxed py-3 border-b border-white/5 last:border-0 text-slate-400">
+                        <span className="text-red-600 font-black h-fit shrink-0">_&gt;</span>
+                        <span>{r}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Certification & Validating Action */}
+                <div className="space-y-6">
+                  <div className="flex items-center gap-6 p-8 bg-slate-950/40 rounded-[40px] border border-white/5">
+                    <DaganzoEmblem className="w-12 h-14 opacity-50" />
+                    <div className="flex flex-col">
+                      <span className="text-[12px] font-black text-white/30 uppercase tracking-[0.2em]">CERTIFICADO POR</span>
+                      <span className="text-[11px] font-black text-cyan-500 uppercase">P.L. DAGANZO DE ARRIBA</span>
+                    </div>
+                  </div>
+
+                  <button onClick={() => setSelectedLog(null)} className="w-full py-10 bg-[#b91c1c] text-white rounded-[45px] font-black uppercase tracking-[0.5em] text-3xl shadow-[0_20px_60px_rgba(185,28,28,0.3)] hover:bg-red-600 hover:scale-[1.01] transition-all transform active:scale-95 leading-none">
+                    VALIDAR EXPEDIENTE
+                  </button>
                 </div>
               </div>
             </div>
           </div>
-        )
-      }
+        </div>
+      )}
 
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@100;300;400;700;900&family=JetBrains+Mono:wght@400;700&display=swap');
@@ -2075,7 +1910,7 @@ const App = () => {
           box-shadow: 0 0 8px rgba(245, 158, 11, 0.5);
         }
       `}</style>
-    </div >
+    </div>
   );
 };
 
