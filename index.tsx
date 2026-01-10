@@ -19,8 +19,6 @@ import * as ort from 'onnxruntime-web';
 // Set ORT wasm path
 ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.23.2/dist/';
 
-console.log('🚀 SENTINEL V15 - TIMELINE ABAJO - VERSIÓN CORRECTA CARGADA');
-
 const YOLO_CLASSES = [
   'person', 'bicycle', 'car', 'motorcycle', 'airplane', 'bus', 'train', 'truck', 'boat', 'traffic light',
   'fire hydrant', 'stop sign', 'parking meter', 'bench', 'bird', 'cat', 'dog', 'horse', 'sheep', 'cow',
@@ -1643,74 +1641,76 @@ const App = () => {
               {/* Subtle Grid Overlay */}
               <div className="absolute inset-0 opacity-5 pointer-events-none hud-grid" />
 
-              {/* Neural Timeline - Forensic Seek Bar (Bottom of Video) - VERSION CORRECTA */}
-              <div className="absolute bottom-0 left-0 right-0 h-1.5 w-full bg-white/5 group cursor-pointer overflow-hidden z-30">
-                <div
-                  className="h-full bg-gradient-to-r from-cyan-600 to-cyan-400 shadow-[0_0_15px_#06b6d4] transition-all duration-300 relative"
-                  style={{ width: `${(currentTime / duration) * 100}%` }}
-                >
-                  <div className="absolute right-0 top-0 bottom-0 w-4 bg-white/20 blur-sm animate-pulse" />
-                </div>
-                <input
-                  type="range" min="0" max={duration || 100} step="0.1"
-                  value={currentTime}
-                  onChange={(e) => {
-                    const t = parseFloat(e.target.value);
-                    if (videoRef.current) videoRef.current.currentTime = t;
-                    setCurrentTime(t);
-                  }}
-                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-                />
-              </div>
-
             </div>
           )}
         </div>
 
-        <div className="h-32 bg-[#020617]/98 border-t border-white/5 flex items-center justify-between px-12 z-50">
-          {/* Left: Playback & Status */}
-          <div className="flex items-center gap-8 w-1/3">
-            <button onClick={() => isPlaying ? safePause() : safePlay()}
-              className={`w-14 h-14 rounded-2xl flex items-center justify-center transition-all ${isPlaying ? 'bg-red-800 shadow-neon' : 'bg-cyan-600 text-black shadow-neon'}`}>
-              {isPlaying ? <Pause size={28} /> : <Play size={28} className="ml-1" />}
-            </button>
-            <div className="flex flex-col">
-              <span className="text-[11px] font-black text-slate-600 uppercase tracking-widest mb-1">Status de Feed</span>
-              <span className="text-xl font-black italic text-white/95 tracking-tighter uppercase whitespace-nowrap">
-                {source === 'live' ? 'Neural_Live_Feed' : source === 'upload' ? 'Forensic_Buffer' : 'System_Standby'}
-              </span>
+        <div className="h-36 bg-[#020617]/98 border-t border-white/5 flex flex-col z-50">
+          {/* Neural Timeline - Forensic Seek Bar */}
+          <div className="h-1.5 w-full bg-white/5 relative group cursor-pointer overflow-hidden">
+            <div
+              className="h-full bg-gradient-to-r from-cyan-600 to-cyan-400 shadow-[0_0_15px_#06b6d4] transition-all duration-300 relative"
+              style={{ width: `${(currentTime / duration) * 100}%` }}
+            >
+              <div className="absolute right-0 top-0 bottom-0 w-4 bg-white/20 blur-sm animate-pulse" />
             </div>
+            <input
+              type="range" min="0" max={duration || 100} step="0.1"
+              value={currentTime}
+              onChange={(e) => {
+                const t = parseFloat(e.target.value);
+                if (videoRef.current) videoRef.current.currentTime = t;
+                setCurrentTime(t);
+              }}
+              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+            />
           </div>
 
-          {/* Center: Detections & Identity */}
-          <div className="flex flex-col items-center justify-center gap-1 w-1/3">
-            <div className="flex items-center gap-3 bg-white/5 px-4 py-1.5 rounded-full border border-white/10 mb-1">
-              <Target size={12} className="text-purple-400" />
-              <span className="text-[9px] font-black text-white/80 uppercase tracking-widest">SENTINEL_V15_NODE</span>
-            </div>
-            <div className="flex gap-8 border-t border-white/5 pt-2">
-              <div className="text-center">
-                <span className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] block">Detecciones</span>
-                <span className="text-2xl font-mono font-black text-cyan-500 leading-none">{cumulativeDetections}</span>
-              </div>
-              <div className="text-center">
-                <span className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] block">Expedientes</span>
-                <span className="text-2xl font-mono font-black text-red-600 leading-none">{cumulativeExpedientes}</span>
+          <div className="flex-1 flex items-center justify-between px-12">
+            {/* Left: Playback & Status */}
+            <div className="flex items-center gap-8 w-1/3">
+              <button onClick={() => isPlaying ? safePause() : safePlay()}
+                className={`w-14 h-14 rounded-2xl flex items-center justify-center transition-all ${isPlaying ? 'bg-red-800 shadow-neon' : 'bg-cyan-600 text-black shadow-neon'}`}>
+                {isPlaying ? <Pause size={28} /> : <Play size={28} className="ml-1" />}
+              </button>
+              <div className="flex flex-col">
+                <span className="text-[11px] font-black text-slate-600 uppercase tracking-widest mb-1">Status de Feed</span>
+                <span className="text-xl font-black italic text-white/95 tracking-tighter uppercase whitespace-nowrap">
+                  {source === 'live' ? 'Neural_Live_Feed' : source === 'upload' ? 'Forensic_Buffer' : 'System_Standby'}
+                </span>
               </div>
             </div>
-          </div>
 
-          {/* Right: Actions */}
-          <div className="flex items-center justify-end gap-6 w-1/3">
-            <div className="hidden lg:flex flex-col text-right">
-              <span className="text-[11px] font-black text-slate-600 uppercase tracking-widest mb-1">Processor_Unit</span>
-              <span className="text-[12px] font-mono text-cyan-400/60 uppercase">Daganzo_Node_01</span>
+            {/* Center: Detections & Identity */}
+            <div className="flex flex-col items-center justify-center gap-1 w-1/3">
+              <div className="flex items-center gap-3 bg-white/5 px-4 py-1.5 rounded-full border border-white/10 mb-1">
+                <Target size={12} className="text-purple-400" />
+                <span className="text-[9px] font-black text-white/80 uppercase tracking-widest">SENTINEL_V15_NODE</span>
+              </div>
+              <div className="flex gap-8 border-t border-white/5 pt-2">
+                <div className="text-center">
+                  <span className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] block">Detecciones</span>
+                  <span className="text-2xl font-mono font-black text-cyan-500 leading-none">{cumulativeDetections}</span>
+                </div>
+                <div className="text-center">
+                  <span className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] block">Expedientes</span>
+                  <span className="text-2xl font-mono font-black text-red-600 leading-none">{cumulativeExpedientes}</span>
+                </div>
+              </div>
             </div>
-            <button onClick={() => document.getElementById('f-up-main')?.click()}
-              className="w-14 h-14 bg-white/5 rounded-2xl hover:bg-white/10 text-slate-500 transition-all border border-white/10 flex items-center justify-center shadow-neon group">
-              <Upload size={24} className="group-hover:text-cyan-400 transition-colors" />
-              <input id="f-up-main" type="file" className="hidden" accept="video/*" onChange={e => { const f = e.target.files?.[0]; if (f) { setVideoUrl(URL.createObjectURL(f)); setSource('upload'); } }} />
-            </button>
+
+            {/* Right: Actions */}
+            <div className="flex items-center justify-end gap-6 w-1/3">
+              <div className="hidden lg:flex flex-col text-right">
+                <span className="text-[11px] font-black text-slate-600 uppercase tracking-widest mb-1">Processor_Unit</span>
+                <span className="text-[12px] font-mono text-cyan-400/60 uppercase">Daganzo_Node_01</span>
+              </div>
+              <button onClick={() => document.getElementById('f-up-main')?.click()}
+                className="w-14 h-14 bg-white/5 rounded-2xl hover:bg-white/10 text-slate-500 transition-all border border-white/10 flex items-center justify-center shadow-neon group">
+                <Upload size={24} className="group-hover:text-cyan-400 transition-colors" />
+                <input id="f-up-main" type="file" className="hidden" accept="video/*" onChange={e => { const f = e.target.files?.[0]; if (f) { setVideoUrl(URL.createObjectURL(f)); setSource('upload'); } }} />
+              </button>
+            </div>
           </div>
         </div>
       </main>
