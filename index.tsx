@@ -1258,27 +1258,34 @@ const App = () => {
         <div className="flex-1 p-6 space-y-8">
           <div className="bg-slate-900/40 rounded-[32px] p-6 space-y-6 border border-white/5 shadow-2xl relative overflow-hidden group">
             <div className="absolute inset-0 bg-gradient-to-br from-cyan-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
-            <div className="flex items-center justify-between">
+            <div className="space-y-4">
               <h3 className="text-[11px] font-black text-cyan-500 uppercase tracking-[0.2em] flex items-center gap-2 italic">
                 <ActivitySquare size={14} className="animate-pulse" /> CONFIGURACIÓN NEURAL
               </h3>
-              <div className="flex gap-1 bg-black/40 p-1 rounded-xl border border-white/5">
-                {[
-                  { id: 'perf', label: 'FLUIDEZ', params: { confThreshold: 0.20, detectionSkip: 4, persistence: 30 }, mode: 'bytetrack' },
-                  { id: 'bal', label: 'AUTO', params: { confThreshold: 0.25, detectionSkip: 2, persistence: 60 }, mode: 'bytetrack' },
-                  { id: 'prec', label: 'PRECI', params: { confThreshold: 0.45, detectionSkip: 1, persistence: 90 }, mode: 'botsort' }
-                ].map(preset => (
-                  <button
-                    key={preset.id}
-                    onClick={() => {
-                      setInferParams(preset.params);
-                      setTrackingMode(preset.mode as any);
-                    }}
-                    className="px-2 py-1 rounded-lg text-[8px] font-black uppercase text-slate-500 hover:text-cyan-400 hover:bg-cyan-500/10 transition-all border border-transparent active:scale-95"
-                  >
-                    {preset.label}
-                  </button>
-                ))}
+
+              <div className="flex items-center justify-between p-3 rounded-2xl bg-black/40 border border-white/5">
+                <span className="text-[9px] font-black text-slate-500 tracking-tighter uppercase whitespace-nowrap">MODO OPERATIVO</span>
+                <div className="flex gap-1 bg-slate-950 p-1 rounded-xl">
+                  {[
+                    { id: 'perf', label: 'FLUIDEZ', params: { confThreshold: 0.20, detectionSkip: 4, persistence: 30 }, mode: 'bytetrack' },
+                    { id: 'bal', label: 'AUTO', params: { confThreshold: 0.25, detectionSkip: 2, persistence: 60 }, mode: 'bytetrack' },
+                    { id: 'prec', label: 'PRECI', params: { confThreshold: 0.45, detectionSkip: 1, persistence: 90 }, mode: 'botsort' }
+                  ].map(preset => (
+                    <button
+                      key={preset.id}
+                      onClick={() => {
+                        setInferParams(preset.params);
+                        setTrackingMode(preset.mode as any);
+                      }}
+                      className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all ${inferParams.confThreshold === preset.params.confThreshold && inferParams.detectionSkip === preset.params.detectionSkip
+                          ? 'bg-cyan-500 text-black shadow-[0_0_15px_#22d3ee]'
+                          : 'text-slate-600 hover:text-slate-400'
+                        }`}
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
 
