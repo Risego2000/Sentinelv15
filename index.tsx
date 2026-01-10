@@ -1067,6 +1067,11 @@ const App = () => {
             const results = await ortSessionRef.current.run({ [ortSessionRef.current.inputNames[0]]: tensor });
             const output = results[ortSessionRef.current.outputNames[0]].data as Float32Array;
             const numLabels = 80; const numProposals = 8400;
+
+            // Calcular factor de escala del modelo al video original
+            const scaleX = v.videoWidth / inputSize;
+            const scaleY = v.videoHeight / inputSize;
+
             for (let j = 0; j < numProposals; j++) {
               let maxProb = 0; let classId = -1;
               for (let k = 0; k < numLabels; k++) {
@@ -1074,9 +1079,23 @@ const App = () => {
                 if (prob > maxProb) { maxProb = prob; classId = k; }
               }
               if (maxProb > inferParams.confThreshold) {
+                // Coordenadas en espacio del modelo (640x640)
+                const cx = output[0 * numProposals + j];
+                const cy = output[1 * numProposals + j];
+                const w = output[2 * numProposals + j];
+                const h = output[3 * numProposals + j];
+
+                // Escalar al espacio del video original
+                const x = (cx - w / 2) * scaleX;
+                const y = (cy - h / 2) * scaleY;
+                const width = w * scaleX;
+                const height = h * scaleY;
+
                 detections.push({
-                  bbox: [output[0 * numProposals + j] - output[2 * numProposals + j] / 2, output[1 * numProposals + j] - output[3 * numProposals + j] / 2, output[2 * numProposals + j], output[3 * numProposals + j]],
-                  score: maxProb, class: YOLO_CLASSES[classId] || 'unknown', confidence: maxProb
+                  bbox: [x, y, width, height],
+                  score: maxProb,
+                  class: YOLO_CLASSES[classId] || 'unknown',
+                  confidence: maxProb
                 });
               }
             }
