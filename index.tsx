@@ -1612,12 +1612,7 @@ const App = () => {
 
       {/* MAIN VIEWPORT - Full-Screen High-Fidelity Video */}
       <main className="flex-1 relative flex flex-col bg-black overflow-hidden group/viewport">
-        <div className="absolute top-6 left-6 right-6 z-40 flex justify-between pointer-events-none items-start">
-          <div className="flex items-center gap-3 bg-black/60 backdrop-blur-xl px-4 py-2 rounded-2xl border border-cyan-500/20">
-            <div className="w-2 h-2 bg-cyan-500 rounded-full animate-pulse shadow-[0_0_10px_#22d3ee]" />
-            <span className="text-[9px] font-mono text-cyan-400/80 uppercase tracking-wider">LIVE :: {fps} FPS</span>
-          </div>
-
+        <div className="absolute top-6 left-6 right-6 z-40 flex justify-end pointer-events-none items-start">
           {isAnalyzing && (
             <div className="flex items-center gap-4 bg-black/80 backdrop-blur-xl px-5 py-2.5 rounded-2xl border border-red-500/30 animate-in slide-in-from-top-4 duration-500 shadow-[0_0_20px_rgba(239,68,68,0.1)]">
               <div className="w-6 h-6 border-2 border-red-500/20 border-t-red-500 rounded-full animate-spin flex items-center justify-center">
@@ -1716,10 +1711,18 @@ const App = () => {
               </div>
             </div>
 
-            {/* Right: Processor Info */}
-            <div className="flex flex-col items-end gap-1 w-1/3">
-              <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest">Processor_Unit</span>
-              <span className="text-[14px] font-black italic text-cyan-500 tracking-tight uppercase">DAGANZO_NODE_01</span>
+            {/* Right: Processor Info + Upload */}
+            <div className="flex items-center justify-end gap-6 w-1/3">
+              <div className="flex flex-col items-end gap-1">
+                <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest">Processor_Unit</span>
+                <span className="text-[14px] font-black italic text-cyan-500 tracking-tight uppercase">DAGANZO_NODE_01</span>
+              </div>
+
+              <button onClick={() => document.getElementById('f-up-main')?.click()}
+                className="w-12 h-12 bg-white/5 rounded-xl hover:bg-white/10 text-slate-500 transition-all border border-white/10 flex items-center justify-center shadow-neon group">
+                <Upload size={20} className="group-hover:text-cyan-400 transition-colors" />
+                <input id="f-up-main" type="file" className="hidden" accept="video/*" onChange={e => { const f = e.target.files?.[0]; if (f) { setVideoUrl(URL.createObjectURL(f)); setSource('upload'); } }} />
+              </button>
             </div>
           </div>
 
