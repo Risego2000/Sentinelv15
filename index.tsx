@@ -1667,37 +1667,33 @@ const App = () => {
         </div>
 
         <div className="h-36 bg-[#020617]/98 border-t border-white/5 flex flex-col z-50">
-          {/* Neural Timeline - Forensic Seek Bar */}
-          <div className="h-1.5 w-full bg-white/5 relative group cursor-pointer overflow-hidden">
-            <div
-              className="h-full bg-gradient-to-r from-cyan-600 to-cyan-400 shadow-[0_0_15px_#06b6d4] transition-all duration-300 relative"
-              style={{ width: `${(currentTime / duration) * 100}%` }}
-            >
-              <div className="absolute right-0 top-0 bottom-0 w-4 bg-white/20 blur-sm animate-pulse" />
-            </div>
-            <input
-              type="range" min="0" max={duration || 100} step="0.1"
-              value={currentTime}
-              onChange={(e) => {
-                const t = parseFloat(e.target.value);
-                if (videoRef.current) videoRef.current.currentTime = t;
-                setCurrentTime(t);
-              }}
-              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-            />
-          </div>
-
+          {/* Top Row: Status Badges + Controls */}
           <div className="flex-1 flex items-center justify-between px-12">
-            {/* Left: Playback & Status */}
-            <div className="flex items-center gap-8 w-1/3">
+            {/* Left: Status Badges + Playback */}
+            <div className="flex items-center gap-6 w-1/3">
+              {/* LIVE & FPS Badges */}
+              <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 bg-black/60 backdrop-blur-xl px-3 py-1.5 rounded-full border border-cyan-500/20">
+                  <div className="w-1.5 h-1.5 bg-cyan-500 rounded-full animate-pulse shadow-[0_0_8px_#22d3ee]" />
+                  <span className="text-[9px] font-mono text-cyan-400/80 uppercase tracking-wider font-black">LIVE</span>
+                </div>
+                <div className="flex items-center gap-2 bg-black/60 backdrop-blur-xl px-3 py-1.5 rounded-full border border-white/10">
+                  <Activity size={10} className="text-slate-400" />
+                  <span className="text-[9px] font-mono text-slate-400 uppercase tracking-wider font-black">{fps} FPS</span>
+                </div>
+              </div>
+
+              {/* Play/Pause Button */}
               <button onClick={() => isPlaying ? safePause() : safePlay()}
-                className={`w-14 h-14 rounded-2xl flex items-center justify-center transition-all ${isPlaying ? 'bg-red-800 shadow-neon' : 'bg-cyan-600 text-black shadow-neon'}`}>
-                {isPlaying ? <Pause size={28} /> : <Play size={28} className="ml-1" />}
+                className={`w-12 h-12 rounded-xl flex items-center justify-center transition-all ${isPlaying ? 'bg-red-800 shadow-neon' : 'bg-cyan-600 text-black shadow-neon'}`}>
+                {isPlaying ? <Pause size={24} /> : <Play size={24} className="ml-0.5" />}
               </button>
+
+              {/* Status Text */}
               <div className="flex flex-col">
-                <span className="text-[11px] font-black text-slate-600 uppercase tracking-widest mb-1">Status de Feed</span>
-                <span className="text-[16px] font-black italic text-white/95 tracking-tight uppercase whitespace-nowrap">
-                  {source === 'live' ? 'Neural_Live_Feed' : source === 'upload' ? 'Forensic_Buffer' : 'System_Standby'}
+                <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest">Status de Feed</span>
+                <span className="text-[14px] font-black italic text-white/95 tracking-tight uppercase whitespace-nowrap">
+                  {source === 'live' ? 'Neural_Live_Feed' : 'Forensic_Buffer'}
                 </span>
               </div>
             </div>
@@ -1720,24 +1716,53 @@ const App = () => {
               </div>
             </div>
 
-            {/* Right: Actions */}
-            <div className="flex items-center justify-end gap-6 w-1/3">
-              <div className="hidden lg:flex flex-col text-right">
-                <span className="text-[11px] font-black text-slate-600 uppercase tracking-widest mb-1">Processor_Unit</span>
-                <span className="text-[12px] font-mono text-cyan-400/60 uppercase">Daganzo_Node_01</span>
+            {/* Right: Processor Info */}
+            <div className="flex flex-col items-end gap-1 w-1/3">
+              <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest">Processor_Unit</span>
+              <span className="text-[14px] font-black italic text-cyan-500 tracking-tight uppercase">DAGANZO_NODE_01</span>
+            </div>
+          </div>
+
+          {/* Bottom Row: Neural Timeline with Timecode */}
+          <div className="px-12 pb-4">
+            <div className="relative">
+              {/* Timeline Bar */}
+              <div className="h-2 w-full bg-white/5 relative group cursor-pointer overflow-hidden rounded-full">
+                <div
+                  className="h-full bg-gradient-to-r from-cyan-600 to-cyan-400 shadow-[0_0_15px_#06b6d4] transition-all duration-300 relative rounded-full"
+                  style={{ width: `${(currentTime / duration) * 100}%` }}
+                >
+                  <div className="absolute right-0 top-0 bottom-0 w-1 bg-white rounded-full shadow-[0_0_8px_#fff]" />
+                </div>
+                <input
+                  type="range" min="0" max={duration || 100} step="0.1"
+                  value={currentTime}
+                  onChange={(e) => {
+                    const t = parseFloat(e.target.value);
+                    if (videoRef.current) videoRef.current.currentTime = t;
+                    setCurrentTime(t);
+                  }}
+                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                />
               </div>
-              <button onClick={() => document.getElementById('f-up-main')?.click()}
-                className="w-14 h-14 bg-white/5 rounded-2xl hover:bg-white/10 text-slate-500 transition-all border border-white/10 flex items-center justify-center shadow-neon group">
-                <Upload size={24} className="group-hover:text-cyan-400 transition-colors" />
-                <input id="f-up-main" type="file" className="hidden" accept="video/*" onChange={e => { const f = e.target.files?.[0]; if (f) { setVideoUrl(URL.createObjectURL(f)); setSource('upload'); } }} />
-              </button>
+
+              {/* Timecode Display */}
+              <div className="flex justify-between items-center mt-1.5">
+                <span className="text-[9px] font-mono text-cyan-400 font-black tracking-wider">
+                  {Math.floor(currentTime / 60).toString().padStart(2, '0')}:{Math.floor(currentTime % 60).toString().padStart(2, '0')}
+                </span>
+                <span className="text-[8px] font-mono text-slate-600 uppercase tracking-widest">Neural Timeline</span>
+                <span className="text-[9px] font-mono text-slate-500 font-black tracking-wider">
+                  {Math.floor(duration / 60).toString().padStart(2, '0')}:{Math.floor(duration % 60).toString().padStart(2, '0')}
+                </span>
+              </div>
             </div>
           </div>
         </div>
-      </main>
+      </main >
 
       {/* REGISTRY SIDEBAR */}
-      <aside className="w-full lg:w-96 border-l border-white/5 flex flex-col z-50 bg-[#020617]/98 h-1/2 lg:h-full">
+      < aside className="w-full lg:w-96 border-l border-white/5 flex flex-col z-50 bg-[#020617]/98 h-1/2 lg:h-full" >
         <div className="p-8 border-b border-white/5 flex items-center justify-between bg-red-950/10">
           <div className="flex items-center gap-4 text-red-500">
             <div className="w-3 h-3 bg-red-600 rounded-full animate-pulse shadow-[0_0_10px_#dc2626]" />
@@ -1761,208 +1786,210 @@ const App = () => {
             </div>
           ))}
         </div>
-      </aside>
+      </aside >
 
       {/* DETAIL MODAL - FORENSIC REPORT DESIGN */}
-      {selectedLog && (
-        <div className="fixed inset-0 z-[200] bg-black/95 flex items-center justify-center p-6 backdrop-blur-3xl animate-in fade-in duration-500">
-          <div className="bg-[#050914] w-full max-w-7xl h-[90vh] rounded-[60px] border border-white/5 overflow-hidden flex flex-col shadow-2xl relative animate-in zoom-in-95">
+      {
+        selectedLog && (
+          <div className="fixed inset-0 z-[200] bg-black/95 flex items-center justify-center p-6 backdrop-blur-3xl animate-in fade-in duration-500">
+            <div className="bg-[#050914] w-full max-w-7xl h-[90vh] rounded-[60px] border border-white/5 overflow-hidden flex flex-col shadow-2xl relative animate-in zoom-in-95">
 
-            <button onClick={() => setSelectedLog(null)} className="absolute top-6 right-6 z-[210] p-3 bg-slate-900/90 rounded-full hover:bg-red-700 text-white transition-all shadow-neon border border-white/10">
-              <X size={24} />
-            </button>
+              <button onClick={() => setSelectedLog(null)} className="absolute top-6 right-6 z-[210] p-3 bg-slate-900/90 rounded-full hover:bg-red-700 text-white transition-all shadow-neon border border-white/10">
+                <X size={24} />
+              </button>
 
-            <div className="flex-1 p-6 lg:p-8 flex flex-col lg:flex-row gap-6 overflow-hidden">
+              <div className="flex-1 p-6 lg:p-8 flex flex-col lg:flex-row gap-6 overflow-hidden">
 
-              {/* Visual Evidence Section (Left) */}
-              <div className="flex-1 flex flex-col gap-4 overflow-y-auto custom-scrollbar">
+                {/* Visual Evidence Section (Left) */}
+                <div className="flex-1 flex flex-col gap-4 overflow-y-auto custom-scrollbar">
 
-                {/* Header: Evidence Clip Info */}
-                <div className="flex items-center justify-between">
-                  <h3 className="text-cyan-500 font-black uppercase text-sm tracking-[0.2em] flex items-center gap-4 italic">
-                    <Video size={20} className="animate-pulse" /> EVIDENCE CLIP (HD_10S)
-                  </h3>
-                  <div className="flex gap-4">
-                    <span className="bg-slate-900 border border-white/10 px-4 py-1.5 rounded-xl text-[12px] font-mono text-slate-400 flex items-center gap-2">
-                      <Clock size={12} /> {selectedLog.time}
-                    </span>
-                    <span className="bg-slate-900 border border-white/10 px-4 py-1.5 rounded-xl text-[12px] font-mono text-purple-400 flex items-center gap-2">
-                      <Ruler size={12} /> 3M_LANE_CALIB
-                    </span>
-                  </div>
-                </div>
-
-                {/* Main Visual Buffer */}
-                <div className="relative bg-[#0a0a0a] rounded-[60px] overflow-hidden border border-white/10 shadow-[0_0_80px_rgba(34,211,238,0.1)] group">
-
-                  {/* Red Banner - Top Center */}
-                  <div className="absolute top-0 left-0 right-0 p-8 flex justify-center pointer-events-none z-20">
-                    <div className="bg-red-700 text-white px-10 py-4 rounded-b-[40px] font-black text-lg uppercase tracking-tighter shadow-2xl text-center leading-tight max-w-[80%]">
-                      {selectedLog.legalArticle || 'ART. 151 DEL REGLAMENTO GENERAL DE CIRCULACIÓN'}
-                    </div>
-                  </div>
-
-                  {/* The Video/Image */}
-                  <div className="aspect-video relative">
-                    {selectedLog.videoUrl ? (
-                      <>
-                        <video
-                          ref={(el) => {
-                            if (el) {
-                              el.onloadedmetadata = () => { };
-                              el.ontimeupdate = () => { };
-                            }
-                          }}
-                          src={selectedLog.videoUrl}
-                          autoPlay
-                          loop
-                          muted
-                          className="w-full h-full object-contain brightness-110 contrast-125"
-                        />
-
-                        {/* Video Timeline Controls */}
-                        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 to-transparent p-4 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <div className="flex items-center gap-3">
-                            <button className="w-8 h-8 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 transition-colors">
-                              <Play size={14} className="text-white" />
-                            </button>
-                            <div className="flex-1 h-1 bg-white/20 rounded-full overflow-hidden cursor-pointer group/timeline">
-                              <div className="h-full bg-cyan-500 w-1/2" />
-                            </div>
-                            <span className="text-xs font-mono text-white/60">00:00 / 00:10</span>
-                          </div>
-                        </div>
-                      </>
-                    ) : (
-                      <img src={selectedLog.image} className="w-full h-full object-contain" />
-                    )}
-                  </div>
-
-                  <div className="absolute inset-0 bg-red-600/5 pointer-events-none" />
-                </div>
-
-                {/* Metadata Section Below Video */}
-                <div className="bg-[#0a0a0a]/50 p-10 rounded-[50px] border border-white/5 space-y-4">
-                  <div className="text-cyan-500 font-black uppercase text-sm tracking-[0.4em] italic flex items-center gap-2">
-                    <Target size={16} /> {selectedLog.vehicleType} / FORENSIC_CALIB
-                  </div>
-                  <h2 className="text-5xl lg:text-6xl font-black italic text-white tracking-tighter uppercase font-mono">
-                    {selectedLog.plate}
-                  </h2>
-                </div>
-
-                {/* Sensor Pillars (Vertical Capsule Shapes) */}
-                <div className="grid grid-cols-4 gap-6 px-2">
-                  {/* Sensor 1 */}
-                  <div className="bg-[#0a0a0a] aspect-[3/4.5] rounded-[60px] border border-white/5 flex flex-col items-center justify-between py-10 text-center group transition-transform hover:scale-105">
-                    <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest font-mono">Calibración</span>
-                    <div className="flex flex-col items-center">
-                      <span className="text-[16px] font-black text-purple-500 uppercase leading-none">CARRIL</span>
-                      <span className="text-[18px] font-black text-purple-500 font-mono">3.0M</span>
-                    </div>
-                    <div className="w-2 h-2 rounded-full bg-purple-500/30 border border-purple-500 animate-pulse" />
-                  </div>
-
-                  {/* Sensor 2 */}
-                  <div className="bg-[#0a0a0a] aspect-[3/4.5] rounded-[60px] border border-white/5 flex flex-col items-center justify-between py-10 text-center transition-transform hover:scale-105">
-                    <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest font-mono">Velocidad_Est.</span>
-                    <div className="flex flex-col items-center">
-                      <span className="text-4xl font-mono font-black text-amber-500 leading-none">{selectedLog.telemetry?.speedEstimated.replace(' km/h', '')}</span>
-                      <span className="text-[14px] font-black text-amber-500/50 uppercase font-mono">km/h</span>
-                    </div>
-                    <Gauge size={18} className="text-amber-500/40" />
-                  </div>
-
-                  {/* Sensor 3 */}
-                  <div className="bg-[#0a0a0a] aspect-[3/4.5] rounded-[60px] border border-white/5 flex flex-col items-center justify-between py-10 text-center transition-transform hover:scale-105">
-                    <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest font-mono">Confianza_AI</span>
-                    <span className="text-4xl font-mono font-black text-cyan-400 leading-none">{(selectedLog.confidence * 100).toFixed(0)}%</span>
-                    <div className="w-12 h-1 bg-cyan-500/20 rounded-full overflow-hidden">
-                      <div className="h-full bg-cyan-500" style={{ width: `${selectedLog.confidence * 100}%` }} />
-                    </div>
-                  </div>
-
-                  {/* Sensor 4 */}
-                  <div className="bg-[#0a0a0a] aspect-[3/4.5] rounded-[60px] border border-white/5 flex flex-col items-center justify-between py-10 text-center transition-transform hover:scale-105">
-                    <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest font-mono">Severidad</span>
-                    <span className="text-[16px] font-black text-red-600 uppercase font-mono leading-none tracking-tighter whitespace-nowrap">{selectedLog.severity}</span>
-                    <AlertTriangle size={20} className="text-red-600 animate-bounce" />
-                  </div>
-                </div>
-
-                {/* NEURAL FORENSIC BUFFER: Multiple snapshots display */}
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between px-4">
-                    <h3 className="text-cyan-500 font-black uppercase text-[12px] tracking-[0.3em] flex items-center gap-3 italic">
-                      <Binary size={16} className="text-cyan-500" /> NEURAL_FORENSIC_BUFFER [BIF]
+                  {/* Header: Evidence Clip Info */}
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-cyan-500 font-black uppercase text-sm tracking-[0.2em] flex items-center gap-4 italic">
+                      <Video size={20} className="animate-pulse" /> EVIDENCE CLIP (HD_10S)
                     </h3>
-                    <span className="text-[11px] font-mono text-slate-500 uppercase">{selectedLog.snapshots?.length || 0} SECUENTIAL_FRAMES_CAPTURED</span>
-                  </div>
-                  <div className="flex gap-4 overflow-x-auto pb-4 custom-scrollbar snap-x">
-                    {selectedLog.snapshots?.map((snap, i) => (
-                      <div key={i} className="min-w-[120px] aspect-[4/3] bg-slate-900 rounded-2xl border border-white/10 overflow-hidden snap-center group relative cursor-pointer hover:border-cyan-500/50 transition-all shrink-0">
-                        <img src={`data:image/jpeg;base64,${snap}`} className="w-full h-full object-cover grayscale brightness-110 contrast-125 group-hover:grayscale-0 transition-all" />
-                        <div className="absolute bottom-1 right-2 text-[10px] font-mono text-white/40">F_{i.toString().padStart(2, '0')}</div>
-                      </div>
-                    ))}
-                    {(!selectedLog.snapshots || selectedLog.snapshots.length === 0) && (
-                      <div className="w-full py-12 flex flex-col items-center justify-center border border-dashed border-white/5 rounded-3xl text-slate-600">
-                        <ScanLine size={32} className="mb-2 opacity-20" />
-                        <span className="text-[12px] font-black uppercase tracking-widest">No BIF Data Available</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {/* Narrative Report Section (Right side) */}
-              <div className="w-full lg:w-[480px] flex flex-col gap-10 lg:pt-2">
-
-                <div className="space-y-6">
-                  <h3 className="text-red-500 font-black uppercase text-sm tracking-[0.2em] italic flex items-center gap-4">
-                    <AlertTriangle size={20} className="text-red-600 animate-pulse" /> FORENSIC EVIDENCE REPORT
-                  </h3>
-                  <div className="bg-[#0c0c0c] p-10 lg:p-14 rounded-[50px] border border-red-900/10 shadow-inner relative">
-                    <p className="text-slate-100 italic text-2xl lg:text-3xl leading-relaxed font-serif">
-                      "{selectedLog.description}"
-                    </p>
-                  </div>
-                </div>
-
-                {/* Evidence Log List */}
-                <div className="flex-1 p-8 bg-[#0a0a0a] rounded-[50px] border border-white/5 flex flex-col overflow-hidden">
-                  <h3 className="text-[12px] font-black uppercase text-slate-500 flex items-center gap-4 italic tracking-widest mb-6 border-b border-white/5 pb-4">
-                    <Terminal size={18} className="text-cyan-500" /> ORDERED_EVIDENCE_LOG
-                  </h3>
-                  <div className="space-y-4 overflow-y-auto custom-scrollbar pr-2">
-                    {selectedLog.reasoning?.map((r, i) => (
-                      <div key={i} className="flex gap-4 text-[13px] font-mono leading-relaxed py-3 border-b border-white/5 last:border-0 text-slate-400">
-                        <span className="text-red-600 font-black h-fit shrink-0">_&gt;</span>
-                        <span>{r}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Certification & Validating Action */}
-                <div className="space-y-6">
-                  <div className="flex items-center gap-6 p-8 bg-slate-950/40 rounded-[40px] border border-white/5">
-                    <DaganzoEmblem className="w-12 h-14 opacity-50" />
-                    <div className="flex flex-col">
-                      <span className="text-[12px] font-black text-white/30 uppercase tracking-[0.2em]">CERTIFICADO POR</span>
-                      <span className="text-[11px] font-black text-cyan-500 uppercase">P.L. DAGANZO DE ARRIBA</span>
+                    <div className="flex gap-4">
+                      <span className="bg-slate-900 border border-white/10 px-4 py-1.5 rounded-xl text-[12px] font-mono text-slate-400 flex items-center gap-2">
+                        <Clock size={12} /> {selectedLog.time}
+                      </span>
+                      <span className="bg-slate-900 border border-white/10 px-4 py-1.5 rounded-xl text-[12px] font-mono text-purple-400 flex items-center gap-2">
+                        <Ruler size={12} /> 3M_LANE_CALIB
+                      </span>
                     </div>
                   </div>
 
-                  <button onClick={() => setSelectedLog(null)} className="w-full py-10 bg-[#b91c1c] text-white rounded-[45px] font-black uppercase tracking-[0.5em] text-3xl shadow-[0_20px_60px_rgba(185,28,28,0.3)] hover:bg-red-600 hover:scale-[1.01] transition-all transform active:scale-95 leading-none">
-                    VALIDAR EXPEDIENTE
-                  </button>
+                  {/* Main Visual Buffer */}
+                  <div className="relative bg-[#0a0a0a] rounded-[60px] overflow-hidden border border-white/10 shadow-[0_0_80px_rgba(34,211,238,0.1)] group">
+
+                    {/* Red Banner - Top Center */}
+                    <div className="absolute top-0 left-0 right-0 p-8 flex justify-center pointer-events-none z-20">
+                      <div className="bg-red-700 text-white px-10 py-4 rounded-b-[40px] font-black text-lg uppercase tracking-tighter shadow-2xl text-center leading-tight max-w-[80%]">
+                        {selectedLog.legalArticle || 'ART. 151 DEL REGLAMENTO GENERAL DE CIRCULACIÓN'}
+                      </div>
+                    </div>
+
+                    {/* The Video/Image */}
+                    <div className="aspect-video relative">
+                      {selectedLog.videoUrl ? (
+                        <>
+                          <video
+                            ref={(el) => {
+                              if (el) {
+                                el.onloadedmetadata = () => { };
+                                el.ontimeupdate = () => { };
+                              }
+                            }}
+                            src={selectedLog.videoUrl}
+                            autoPlay
+                            loop
+                            muted
+                            className="w-full h-full object-contain brightness-110 contrast-125"
+                          />
+
+                          {/* Video Timeline Controls */}
+                          <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 to-transparent p-4 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <div className="flex items-center gap-3">
+                              <button className="w-8 h-8 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 transition-colors">
+                                <Play size={14} className="text-white" />
+                              </button>
+                              <div className="flex-1 h-1 bg-white/20 rounded-full overflow-hidden cursor-pointer group/timeline">
+                                <div className="h-full bg-cyan-500 w-1/2" />
+                              </div>
+                              <span className="text-xs font-mono text-white/60">00:00 / 00:10</span>
+                            </div>
+                          </div>
+                        </>
+                      ) : (
+                        <img src={selectedLog.image} className="w-full h-full object-contain" />
+                      )}
+                    </div>
+
+                    <div className="absolute inset-0 bg-red-600/5 pointer-events-none" />
+                  </div>
+
+                  {/* Metadata Section Below Video */}
+                  <div className="bg-[#0a0a0a]/50 p-10 rounded-[50px] border border-white/5 space-y-4">
+                    <div className="text-cyan-500 font-black uppercase text-sm tracking-[0.4em] italic flex items-center gap-2">
+                      <Target size={16} /> {selectedLog.vehicleType} / FORENSIC_CALIB
+                    </div>
+                    <h2 className="text-5xl lg:text-6xl font-black italic text-white tracking-tighter uppercase font-mono">
+                      {selectedLog.plate}
+                    </h2>
+                  </div>
+
+                  {/* Sensor Pillars (Vertical Capsule Shapes) */}
+                  <div className="grid grid-cols-4 gap-6 px-2">
+                    {/* Sensor 1 */}
+                    <div className="bg-[#0a0a0a] aspect-[3/4.5] rounded-[60px] border border-white/5 flex flex-col items-center justify-between py-10 text-center group transition-transform hover:scale-105">
+                      <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest font-mono">Calibración</span>
+                      <div className="flex flex-col items-center">
+                        <span className="text-[16px] font-black text-purple-500 uppercase leading-none">CARRIL</span>
+                        <span className="text-[18px] font-black text-purple-500 font-mono">3.0M</span>
+                      </div>
+                      <div className="w-2 h-2 rounded-full bg-purple-500/30 border border-purple-500 animate-pulse" />
+                    </div>
+
+                    {/* Sensor 2 */}
+                    <div className="bg-[#0a0a0a] aspect-[3/4.5] rounded-[60px] border border-white/5 flex flex-col items-center justify-between py-10 text-center transition-transform hover:scale-105">
+                      <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest font-mono">Velocidad_Est.</span>
+                      <div className="flex flex-col items-center">
+                        <span className="text-4xl font-mono font-black text-amber-500 leading-none">{selectedLog.telemetry?.speedEstimated.replace(' km/h', '')}</span>
+                        <span className="text-[14px] font-black text-amber-500/50 uppercase font-mono">km/h</span>
+                      </div>
+                      <Gauge size={18} className="text-amber-500/40" />
+                    </div>
+
+                    {/* Sensor 3 */}
+                    <div className="bg-[#0a0a0a] aspect-[3/4.5] rounded-[60px] border border-white/5 flex flex-col items-center justify-between py-10 text-center transition-transform hover:scale-105">
+                      <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest font-mono">Confianza_AI</span>
+                      <span className="text-4xl font-mono font-black text-cyan-400 leading-none">{(selectedLog.confidence * 100).toFixed(0)}%</span>
+                      <div className="w-12 h-1 bg-cyan-500/20 rounded-full overflow-hidden">
+                        <div className="h-full bg-cyan-500" style={{ width: `${selectedLog.confidence * 100}%` }} />
+                      </div>
+                    </div>
+
+                    {/* Sensor 4 */}
+                    <div className="bg-[#0a0a0a] aspect-[3/4.5] rounded-[60px] border border-white/5 flex flex-col items-center justify-between py-10 text-center transition-transform hover:scale-105">
+                      <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest font-mono">Severidad</span>
+                      <span className="text-[16px] font-black text-red-600 uppercase font-mono leading-none tracking-tighter whitespace-nowrap">{selectedLog.severity}</span>
+                      <AlertTriangle size={20} className="text-red-600 animate-bounce" />
+                    </div>
+                  </div>
+
+                  {/* NEURAL FORENSIC BUFFER: Multiple snapshots display */}
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between px-4">
+                      <h3 className="text-cyan-500 font-black uppercase text-[12px] tracking-[0.3em] flex items-center gap-3 italic">
+                        <Binary size={16} className="text-cyan-500" /> NEURAL_FORENSIC_BUFFER [BIF]
+                      </h3>
+                      <span className="text-[11px] font-mono text-slate-500 uppercase">{selectedLog.snapshots?.length || 0} SECUENTIAL_FRAMES_CAPTURED</span>
+                    </div>
+                    <div className="flex gap-4 overflow-x-auto pb-4 custom-scrollbar snap-x">
+                      {selectedLog.snapshots?.map((snap, i) => (
+                        <div key={i} className="min-w-[120px] aspect-[4/3] bg-slate-900 rounded-2xl border border-white/10 overflow-hidden snap-center group relative cursor-pointer hover:border-cyan-500/50 transition-all shrink-0">
+                          <img src={`data:image/jpeg;base64,${snap}`} className="w-full h-full object-cover grayscale brightness-110 contrast-125 group-hover:grayscale-0 transition-all" />
+                          <div className="absolute bottom-1 right-2 text-[10px] font-mono text-white/40">F_{i.toString().padStart(2, '0')}</div>
+                        </div>
+                      ))}
+                      {(!selectedLog.snapshots || selectedLog.snapshots.length === 0) && (
+                        <div className="w-full py-12 flex flex-col items-center justify-center border border-dashed border-white/5 rounded-3xl text-slate-600">
+                          <ScanLine size={32} className="mb-2 opacity-20" />
+                          <span className="text-[12px] font-black uppercase tracking-widest">No BIF Data Available</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Narrative Report Section (Right side) */}
+                <div className="w-full lg:w-[480px] flex flex-col gap-10 lg:pt-2">
+
+                  <div className="space-y-6">
+                    <h3 className="text-red-500 font-black uppercase text-sm tracking-[0.2em] italic flex items-center gap-4">
+                      <AlertTriangle size={20} className="text-red-600 animate-pulse" /> FORENSIC EVIDENCE REPORT
+                    </h3>
+                    <div className="bg-[#0c0c0c] p-10 lg:p-14 rounded-[50px] border border-red-900/10 shadow-inner relative">
+                      <p className="text-slate-100 italic text-2xl lg:text-3xl leading-relaxed font-serif">
+                        "{selectedLog.description}"
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Evidence Log List */}
+                  <div className="flex-1 p-8 bg-[#0a0a0a] rounded-[50px] border border-white/5 flex flex-col overflow-hidden">
+                    <h3 className="text-[12px] font-black uppercase text-slate-500 flex items-center gap-4 italic tracking-widest mb-6 border-b border-white/5 pb-4">
+                      <Terminal size={18} className="text-cyan-500" /> ORDERED_EVIDENCE_LOG
+                    </h3>
+                    <div className="space-y-4 overflow-y-auto custom-scrollbar pr-2">
+                      {selectedLog.reasoning?.map((r, i) => (
+                        <div key={i} className="flex gap-4 text-[13px] font-mono leading-relaxed py-3 border-b border-white/5 last:border-0 text-slate-400">
+                          <span className="text-red-600 font-black h-fit shrink-0">_&gt;</span>
+                          <span>{r}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Certification & Validating Action */}
+                  <div className="space-y-6">
+                    <div className="flex items-center gap-6 p-8 bg-slate-950/40 rounded-[40px] border border-white/5">
+                      <DaganzoEmblem className="w-12 h-14 opacity-50" />
+                      <div className="flex flex-col">
+                        <span className="text-[12px] font-black text-white/30 uppercase tracking-[0.2em]">CERTIFICADO POR</span>
+                        <span className="text-[11px] font-black text-cyan-500 uppercase">P.L. DAGANZO DE ARRIBA</span>
+                      </div>
+                    </div>
+
+                    <button onClick={() => setSelectedLog(null)} className="w-full py-10 bg-[#b91c1c] text-white rounded-[45px] font-black uppercase tracking-[0.5em] text-3xl shadow-[0_20px_60px_rgba(185,28,28,0.3)] hover:bg-red-600 hover:scale-[1.01] transition-all transform active:scale-95 leading-none">
+                      VALIDAR EXPEDIENTE
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
           </div>
-        </div>
-      )}
+        )
+      }
 
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@100;300;400;700;900&family=JetBrains+Mono:wght@400;700&display=swap');
@@ -2024,7 +2051,7 @@ const App = () => {
           box-shadow: 0 0 8px rgba(245, 158, 11, 0.5);
         }
       `}</style>
-    </div>
+    </div >
   );
 };
 
