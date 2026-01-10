@@ -852,28 +852,44 @@ const App = () => {
     const loadModels = async () => {
       try {
         const baseUrl = import.meta.env.BASE_URL || '/';
-        // Construir ruta correctamente: /SENTINELV15/upload/model.onnx
-        const modelPath = (name: string) => {
-          const path = baseUrl.endsWith('/') ? `${baseUrl}upload/${name}` : `${baseUrl}/upload/${name}`;
-          console.log(`🔍 Model path for ${name}:`, path);
-          return path;
+
+        // Intentar cargar desde local primero, luego desde HuggingFace CDN
+        const modelSources = {
+          'yolo11n_640.onnx': [
+            baseUrl.endsWith('/') ? `${baseUrl}upload/yolo11n_640.onnx` : `${baseUrl}/upload/yolo11n_640.onnx`,
+            'https://huggingface.co/Xenova/yolov11n/resolve/main/onnx/model.onnx'
+          ],
+          'yolo11n_pose.onnx': [
+            baseUrl.endsWith('/') ? `${baseUrl}upload/yolo11n_pose.onnx` : `${baseUrl}/upload/yolo11n_pose.onnx`,
+            'https://huggingface.co/Xenova/yolov11n-pose/resolve/main/onnx/model.onnx'
+          ]
+        };
+
+        const loadModelWithFallback = async (modelName: string, sources: string[]) => {
+          for (let i = 0; i < sources.length; i++) {
+            try {
+              console.log(`🔍 Attempting to load ${modelName} from: ${sources[i]}`);
+              const session = await ort.InferenceSession.create(sources[i], {
+                executionProviders: ['wasm'],
+                graphOptimizationLevel: 'all'
+              });
+              console.log(`✅ Successfully loaded ${modelName} from source ${i + 1}`);
+              return session;
+            } catch (e) {
+              console.warn(`❌ Failed to load ${modelName} from source ${i + 1}:`, e);
+              if (i === sources.length - 1) throw e;
+            }
+          }
         };
 
         console.log("Loading YOLOv11 Engine...");
-        ortSessionRef.current = await ort.InferenceSession.create(modelPath('yolo11n_640.onnx'), {
-          executionProviders: ['wasm'],
-          graphOptimizationLevel: 'all'
-        });
-
-        poseSessionRef.current = await ort.InferenceSession.create(modelPath('yolo11n_pose.onnx'), {
-          executionProviders: ['wasm'],
-          graphOptimizationLevel: 'all'
-        });
+        ortSessionRef.current = await loadModelWithFallback('yolo11n_640.onnx', modelSources['yolo11n_640.onnx']);
+        poseSessionRef.current = await loadModelWithFallback('yolo11n_pose.onnx', modelSources['yolo11n_pose.onnx']);
 
         setIsOrtLoaded(true);
-        console.log("SENTINEL_V15 Core Online :: YOLOv11 + ByteTrack Ready");
+        console.log("✅ SENTINEL_V15 Core Online :: YOLOv11 + ByteTrack Ready");
       } catch (e) {
-        console.error("Model Load Error", e);
+        console.error("❌ Model Load Error", e);
         setStatusMsg("ERROR: NEURAL ENGINE FAILURE. CHECK NETWORK/ASSETS.");
       }
     };
