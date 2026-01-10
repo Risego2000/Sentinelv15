@@ -142,6 +142,9 @@ const App = () => {
     cpu: 24, mem: 1.2, temp: 42, net: 85, gps: '40.6483° N, 3.4582° W'
   });
 
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+
   const [inferParams, setInferParams] = useState({
     confThreshold: 0.25,
     detectionSkip: 2,
@@ -976,195 +979,199 @@ const App = () => {
     const oY = (canvas.height - dH) / 2;
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    if (!isPlaying) return;
 
-    // HUD-only layer: We no longer draw the video frame to the canvas 
-    // to avoid the "ghosting" effect caused by double-rendering and blend modes.
-    // The background <video> element handles the primary feed.
-
-    // Render interactive forge line if manual mode is active
-    if (isManualMode && canvasRef.current) {
-      ctx.strokeStyle = 'rgba(34, 211, 238, 0.5)';
-      ctx.setLineDash([5, 5]);
-      ctx.beginPath();
-      ctx.moveTo(oX, 0); ctx.lineTo(oX + dW, 0); // Not needed, just testing logic
-      ctx.setLineDash([]);
+    if (v.duration) {
+      if (Math.abs(currentTime - v.currentTime) > 0.5) setCurrentTime(v.currentTime);
+      if (duration !== v.duration) setDuration(v.duration);
     }
 
-    frameCounterRef.current++;
-    let detections: any[] = [];
-
-    if (frameCounterRef.current % inferParams.detectionSkip === 0) {
-      if (ortSessionRef.current) {
-        // YOLOv11 INFERENCE PIPELINE
-        const inputSize = 640;
-        const tempCanvas = document.createElement('canvas');
-        tempCanvas.width = inputSize; tempCanvas.height = inputSize;
-        const tempCtx = tempCanvas.getContext('2d');
-        if (tempCtx) {
-          tempCtx.drawImage(v, 0, 0, inputSize, inputSize);
-          const { data } = tempCtx.getImageData(0, 0, inputSize, inputSize);
-          const input = new Float32Array(3 * inputSize * inputSize);
-          for (let i = 0; i < inputSize * inputSize; i++) {
-            input[i] = data[i * 4] / 255.0;
-            input[i + inputSize * inputSize] = data[i * 4 + 1] / 255.0;
-            input[i + 2 * inputSize * inputSize] = data[i * 4 + 2] / 255.0;
-          }
-          const tensor = new ort.Tensor('float32', input, [1, 3, inputSize, inputSize]);
-          const results = await ortSessionRef.current.run({ [ortSessionRef.current.inputNames[0]]: tensor });
-          const output = results[ortSessionRef.current.outputNames[0]].data as Float32Array;
-          const numLabels = 80; const numProposals = 8400;
-          for (let j = 0; j < numProposals; j++) {
-            let maxProb = 0; let classId = -1;
-            for (let k = 0; k < numLabels; k++) {
-              const prob = output[(k + 4) * numProposals + j];
-              if (prob > maxProb) { maxProb = prob; classId = k; }
-            }
-            if (maxProb > inferParams.confThreshold) {
-              detections.push({
-                bbox: [output[0 * numProposals + j] - output[2 * numProposals + j] / 2, output[1 * numProposals + j] - output[3 * numProposals + j] / 2, output[2 * numProposals + j], output[3 * numProposals + j]],
-                score: maxProb, class: YOLO_CLASSES[classId] || 'unknown', confidence: maxProb
-              });
-            }
-          }
-          detections = applyNMS(detections, 0.45);
-        }
-      } else if (modelRef.current) {
-        detections = await modelRef.current.detect(v, 40, inferParams.confThreshold);
-      }
-    }
-
-    function applyNMS(dets: any[], iouThresh: number) {
-      if (dets.length === 0) return [];
-      const sorted = dets.sort((a, b) => b.score - a.score);
-      const keep = []; const suppressed = new Array(dets.length).fill(false);
-      for (let i = 0; i < sorted.length; i++) {
-        if (suppressed[i]) continue;
-        keep.push(sorted[i]);
-        for (let j = i + 1; j < sorted.length; j++) {
-          if (suppressed[j]) continue;
-          if (calculateIoU(sorted[i].bbox, sorted[j].bbox) > iouThresh) suppressed[j] = true;
-        }
-      }
-      return keep;
-    }
-
-    function calculateIoU(boxA: number[], boxB: number[]) {
-      const xA = Math.max(boxA[0], boxB[0]); const yA = Math.max(boxA[1], boxB[1]);
-      const xB = Math.min(boxA[0] + boxA[2], boxB[0] + boxB[2]); const yB = Math.min(boxA[1] + boxA[3], boxB[1] + boxB[3]);
-      const interArea = Math.max(0, xB - xA) * Math.max(0, yB - yA);
-      return interArea / (boxA[2] * boxA[3] + boxB[2] * boxB[3] - interArea);
-    }
-
-    // Kinematic update
-    tracksRef.current.forEach(track => {
-      track.predictedX = track.points[track.points.length - 1].x + (track.vx * deltaSeconds);
-      track.predictedY = track.points[track.points.length - 1].y + (track.vy * deltaSeconds);
-    });
-
-    // BYTE-TRACK LOGIC
-    const highDets = detections.filter(d => d.score >= inferParams.confThreshold);
-    const lowDets = detections.filter(d => d.score < inferParams.confThreshold && d.score > 0.1);
     const matchedTracks = new Set<number>();
-    const matchedDets = new Set<number>();
 
-    // STAGE 1: Match high-confidence detections
-    highDets.forEach((det, dIdx) => {
-      const lx = (det.bbox[0] / v.videoWidth) * 1000; const ly = (det.bbox[1] / v.videoHeight) * 1000;
-      const lw = (det.bbox[2] / v.videoWidth) * 1000; const lh = (det.bbox[3] / v.videoHeight) * 1000;
-      const cx = lx + lw / 2; const cy = ly + lh / 2;
-      let bestTrack: Track | null = null; let minMatchScore = Infinity;
-
-      for (const track of tracksRef.current) {
-        if (matchedTracks.has(track.id) || track.label !== det.class) continue;
-        const iou = calculateIoU([track.predictedX - track.w / 2, track.predictedY - track.h / 2, track.w, track.h], [lx, ly, lw, lh]);
-        const dist = Math.sqrt(Math.pow(track.predictedX - cx, 2) + Math.pow(track.predictedY - cy, 2));
-        const matchScore = (1 - iou) * 0.7 + (dist / 500) * 0.3;
-        if (matchScore < 0.8 && matchScore < minMatchScore) { minMatchScore = matchScore; bestTrack = track; }
+    if (isPlaying) {
+      // Render interactive forge line if manual mode is active
+      if (isManualMode && canvasRef.current) {
+        ctx.strokeStyle = 'rgba(34, 211, 238, 0.5)';
+        ctx.setLineDash([5, 5]);
+        ctx.beginPath();
+        ctx.moveTo(oX, 0); ctx.lineTo(oX + dW, 0);
+        ctx.setLineDash([]);
       }
-      if (bestTrack) {
-        matchedTracks.add(bestTrack.id); matchedDets.add(dIdx);
-        updateTrackProperties(bestTrack, cx, cy, lw, lh, det.score);
-      }
-    });
 
-    // STAGE 2: Low-confidence matching
-    lowDets.forEach(det => {
-      const lx = (det.bbox[0] / v.videoWidth) * 1000; const ly = (det.bbox[1] / v.videoHeight) * 1000;
-      const lw = (det.bbox[2] / v.videoWidth) * 1000; const lh = (det.bbox[3] / v.videoHeight) * 1000;
-      const cx = lx + lw / 2; const cy = ly + lh / 2;
-      for (const track of tracksRef.current) {
-        if (matchedTracks.has(track.id) || track.label !== det.class) continue;
-        if (calculateIoU([track.predictedX - track.w / 2, track.predictedY - track.h / 2, track.w, track.h], [lx, ly, lw, lh]) > 0.4) {
-          matchedTracks.add(track.id); updateTrackProperties(track, cx, cy, lw, lh, det.score); break;
-        }
-      }
-    });
+      frameCounterRef.current++;
+      let detections: any[] = [];
 
-    // STAGE 3: New track initiation
-    highDets.forEach((det, dIdx) => {
-      if (matchedDets.has(dIdx)) return;
-      const lx = (det.bbox[0] / v.videoWidth) * 1000; const ly = (det.bbox[1] / v.videoHeight) * 1000;
-      const lw = (det.bbox[2] / v.videoWidth) * 1000; const lh = (det.bbox[3] / v.videoHeight) * 1000;
-      const cx = lx + lw / 2; const cy = ly + lh / 2;
-      const isDuplicate = tracksRef.current.some(t => calculateIoU([t.predictedX - t.w / 2, t.predictedY - t.h / 2, t.w, t.h], [lx, ly, lw, lh]) > 0.5);
-      if (!isDuplicate && lw > 15 && lh > 15) {
-        setCumulativeDetections(prev => prev + 1);
-        tracksRef.current.push({
-          id: now + Math.floor(Math.random() * 1000), label: det.class, points: [{ x: cx, y: cy, time: now }],
-          lastSeen: now, lastSnapshotTime: 0, color: VEHICLE_COLORS[det.class] || '#fff', snapshots: [],
-          velocity: 0, age: 0, analyzed: false, vx: 0, vy: 0, predictedX: cx, predictedY: cy,
-          confidence: det.score, missedFrames: 0, w: lw, h: lh
-        });
-      }
-    });
-
-    function updateTrackProperties(t: Track, cx: number, cy: number, lw: number, lh: number, score: number) {
-      const lastP = t.points[t.points.length - 1];
-      const rawVx = (cx - lastP.x) / (deltaSeconds || 0.033);
-      const rawVy = (cy - lastP.y) / (deltaSeconds || 0.033);
-      t.vx = t.vx * 0.6 + rawVx * 0.4; t.vy = t.vy * 0.6 + rawVy * 0.4;
-      t.points.push({ x: t.predictedX * 0.15 + cx * 0.85, y: t.predictedY * 0.15 + cy * 0.85, time: now });
-      t.w = t.w * 0.8 + lw * 0.2; t.h = t.h * 0.8 + lh * 0.2;
-      t.lastSeen = now; t.age++; t.missedFrames = 0;
-      t.confidence = t.confidence * 0.7 + score * 0.3;
-      const frameDisplacement = Math.sqrt(Math.pow(rawVx, 2) + Math.pow(rawVy, 2)) * (deltaSeconds || 0.033);
-      t.velocity = t.velocity * 0.85 + frameDisplacement * 0.15;
-      checkInfractions(t);
-    }
-
-    function checkInfractions(track: Track) {
-      if (track.points.length < 2 || track.isInfractor || track.age < 10) return;
-      const prevP = track.points[track.points.length - 2]; const currP = track.points[track.points.length - 1];
-      const speedKmh = Math.floor((track.velocity / PIXELS_PER_METER) * fpsRef.current * 3.6);
-      for (const line of detectionLines) {
-        if (!line.infractionType) continue;
-        if ((prevP.y < line.y && currP.y > line.y) || (prevP.y > line.y && currP.y < line.y)) {
-          let triggered = false; let subType = '';
-          switch (line.infractionType) {
-            case 'LINE_CROSSING': triggered = true; subType = 'LÍNEA CONTINUA'; break;
-            case 'STOP_VIOLATION': if (speedKmh > 5) { triggered = true; subType = 'OMISIÓN STOP'; } break;
-            case 'BUS_LANE_VIOLATION': triggered = true; subType = 'CARRIL BUS'; break;
-            case 'SPEEDING':
-              let limit = selectedConfigs.some(c => c.includes('school')) ? 20 : 50;
-              if (speedKmh > limit) { triggered = true; subType = 'EXCESO VELOCIDAD'; }
-              break;
+      if (frameCounterRef.current % inferParams.detectionSkip === 0) {
+        if (ortSessionRef.current) {
+          // YOLOv11 INFERENCE PIPELINE
+          const inputSize = 640;
+          const tempCanvas = document.createElement('canvas');
+          tempCanvas.width = inputSize; tempCanvas.height = inputSize;
+          const tempCtx = tempCanvas.getContext('2d');
+          if (tempCtx) {
+            tempCtx.drawImage(v, 0, 0, inputSize, inputSize);
+            const { data } = tempCtx.getImageData(0, 0, inputSize, inputSize);
+            const input = new Float32Array(3 * inputSize * inputSize);
+            for (let i = 0; i < inputSize * inputSize; i++) {
+              input[i] = data[i * 4] / 255.0;
+              input[i + inputSize * inputSize] = data[i * 4 + 1] / 255.0;
+              input[i + 2 * inputSize * inputSize] = data[i * 4 + 2] / 255.0;
+            }
+            const tensor = new ort.Tensor('float32', input, [1, 3, inputSize, inputSize]);
+            const results = await ortSessionRef.current.run({ [ortSessionRef.current.inputNames[0]]: tensor });
+            const output = results[ortSessionRef.current.outputNames[0]].data as Float32Array;
+            const numLabels = 80; const numProposals = 8400;
+            for (let j = 0; j < numProposals; j++) {
+              let maxProb = 0; let classId = -1;
+              for (let k = 0; k < numLabels; k++) {
+                const prob = output[(k + 4) * numProposals + j];
+                if (prob > maxProb) { maxProb = prob; classId = k; }
+              }
+              if (maxProb > inferParams.confThreshold) {
+                detections.push({
+                  bbox: [output[0 * numProposals + j] - output[2 * numProposals + j] / 2, output[1 * numProposals + j] - output[3 * numProposals + j] / 2, output[2 * numProposals + j], output[3 * numProposals + j]],
+                  score: maxProb, class: YOLO_CLASSES[classId] || 'unknown', confidence: maxProb
+                });
+              }
+            }
+            detections = applyNMS(detections, 0.45);
           }
-          if (triggered) { track.isInfractor = true; track.subType = subType; }
+        } else if (modelRef.current) {
+          detections = await modelRef.current.detect(v, 40, inferParams.confThreshold);
         }
       }
-    }
 
-    // Inter-inference smoothing glide
-    const isInferenceFrame = frameCounterRef.current % inferParams.detectionSkip === 0;
-    tracksRef.current.forEach(track => {
-      if (!matchedTracks.has(track.id)) {
-        track.missedFrames++; track.confidence -= 0.05;
-        if (track.missedFrames <= inferParams.persistence) { track.points.push({ x: track.predictedX, y: track.predictedY, time: now }); }
-      } else if (!isInferenceFrame) {
-        track.points.push({ x: track.predictedX, y: track.predictedY, time: now });
+      function applyNMS(dets: any[], iouThresh: number) {
+        if (dets.length === 0) return [];
+        const sorted = dets.sort((a, b) => b.score - a.score);
+        const keep = []; const suppressed = new Array(dets.length).fill(false);
+        for (let i = 0; i < sorted.length; i++) {
+          if (suppressed[i]) continue;
+          keep.push(sorted[i]);
+          for (let j = i + 1; j < sorted.length; j++) {
+            if (suppressed[j]) continue;
+            if (calculateIoU(sorted[i].bbox, sorted[j].bbox) > iouThresh) suppressed[j] = true;
+          }
+        }
+        return keep;
       }
-    });
+
+      function calculateIoU(boxA: number[], boxB: number[]) {
+        const xA = Math.max(boxA[0], boxB[0]); const yA = Math.max(boxA[1], boxB[1]);
+        const xB = Math.min(boxA[0] + boxA[2], boxB[0] + boxB[2]); const yB = Math.min(boxA[1] + boxA[3], boxB[1] + boxB[3]);
+        const interArea = Math.max(0, xB - xA) * Math.max(0, yB - yA);
+        return interArea / (boxA[2] * boxA[3] + boxB[2] * boxB[3] - interArea);
+      }
+
+      // Kinematic update
+      tracksRef.current.forEach(track => {
+        track.predictedX = track.points[track.points.length - 1].x + (track.vx * deltaSeconds);
+        track.predictedY = track.points[track.points.length - 1].y + (track.vy * deltaSeconds);
+      });
+
+      // BYTE-TRACK LOGIC
+      const highDets = detections.filter(d => d.score >= inferParams.confThreshold);
+      const lowDets = detections.filter(d => d.score < inferParams.confThreshold && d.score > 0.1);
+      const matchedTracks = new Set<number>();
+      const matchedDets = new Set<number>();
+
+      // STAGE 1: Match high-confidence detections
+      highDets.forEach((det, dIdx) => {
+        const lx = (det.bbox[0] / v.videoWidth) * 1000; const ly = (det.bbox[1] / v.videoHeight) * 1000;
+        const lw = (det.bbox[2] / v.videoWidth) * 1000; const lh = (det.bbox[3] / v.videoHeight) * 1000;
+        const cx = lx + lw / 2; const cy = ly + lh / 2;
+        let bestTrack: Track | null = null; let minMatchScore = Infinity;
+
+        for (const track of tracksRef.current) {
+          if (matchedTracks.has(track.id) || track.label !== det.class) continue;
+          const iou = calculateIoU([track.predictedX - track.w / 2, track.predictedY - track.h / 2, track.w, track.h], [lx, ly, lw, lh]);
+          const dist = Math.sqrt(Math.pow(track.predictedX - cx, 2) + Math.pow(track.predictedY - cy, 2));
+          const matchScore = (1 - iou) * 0.7 + (dist / 500) * 0.3;
+          if (matchScore < 0.8 && matchScore < minMatchScore) { minMatchScore = matchScore; bestTrack = track; }
+        }
+        if (bestTrack) {
+          matchedTracks.add(bestTrack.id); matchedDets.add(dIdx);
+          updateTrackProperties(bestTrack, cx, cy, lw, lh, det.score);
+        }
+      });
+
+      // STAGE 2: Low-confidence matching
+      lowDets.forEach(det => {
+        const lx = (det.bbox[0] / v.videoWidth) * 1000; const ly = (det.bbox[1] / v.videoHeight) * 1000;
+        const lw = (det.bbox[2] / v.videoWidth) * 1000; const lh = (det.bbox[3] / v.videoHeight) * 1000;
+        const cx = lx + lw / 2; const cy = ly + lh / 2;
+        for (const track of tracksRef.current) {
+          if (matchedTracks.has(track.id) || track.label !== det.class) continue;
+          if (calculateIoU([track.predictedX - track.w / 2, track.predictedY - track.h / 2, track.w, track.h], [lx, ly, lw, lh]) > 0.4) {
+            matchedTracks.add(track.id); updateTrackProperties(track, cx, cy, lw, lh, det.score); break;
+          }
+        }
+      });
+
+      // STAGE 3: New track initiation
+      highDets.forEach((det, dIdx) => {
+        if (matchedDets.has(dIdx)) return;
+        const lx = (det.bbox[0] / v.videoWidth) * 1000; const ly = (det.bbox[1] / v.videoHeight) * 1000;
+        const lw = (det.bbox[2] / v.videoWidth) * 1000; const lh = (det.bbox[3] / v.videoHeight) * 1000;
+        const cx = lx + lw / 2; const cy = ly + lh / 2;
+        const isDuplicate = tracksRef.current.some(t => calculateIoU([t.predictedX - t.w / 2, t.predictedY - t.h / 2, t.w, t.h], [lx, ly, lw, lh]) > 0.5);
+        if (!isDuplicate && lw > 15 && lh > 15) {
+          setCumulativeDetections(prev => prev + 1);
+          tracksRef.current.push({
+            id: now + Math.floor(Math.random() * 1000), label: det.class, points: [{ x: cx, y: cy, time: now }],
+            lastSeen: now, lastSnapshotTime: 0, color: VEHICLE_COLORS[det.class] || '#fff', snapshots: [],
+            velocity: 0, age: 0, analyzed: false, vx: 0, vy: 0, predictedX: cx, predictedY: cy,
+            confidence: det.score, missedFrames: 0, w: lw, h: lh
+          });
+        }
+      });
+
+      function updateTrackProperties(t: Track, cx: number, cy: number, lw: number, lh: number, score: number) {
+        const lastP = t.points[t.points.length - 1];
+        const rawVx = (cx - lastP.x) / (deltaSeconds || 0.033);
+        const rawVy = (cy - lastP.y) / (deltaSeconds || 0.033);
+        t.vx = t.vx * 0.6 + rawVx * 0.4; t.vy = t.vy * 0.6 + rawVy * 0.4;
+        t.points.push({ x: t.predictedX * 0.15 + cx * 0.85, y: t.predictedY * 0.15 + cy * 0.85, time: now });
+        t.w = t.w * 0.8 + lw * 0.2; t.h = t.h * 0.8 + lh * 0.2;
+        t.lastSeen = now; t.age++; t.missedFrames = 0;
+        t.confidence = t.confidence * 0.7 + score * 0.3;
+        const frameDisplacement = Math.sqrt(Math.pow(rawVx, 2) + Math.pow(rawVy, 2)) * (deltaSeconds || 0.033);
+        t.velocity = t.velocity * 0.85 + frameDisplacement * 0.15;
+        checkInfractions(t);
+      }
+
+      function checkInfractions(track: Track) {
+        if (track.points.length < 2 || track.isInfractor || track.age < 10) return;
+        const prevP = track.points[track.points.length - 2]; const currP = track.points[track.points.length - 1];
+        const speedKmh = Math.floor((track.velocity / PIXELS_PER_METER) * fpsRef.current * 3.6);
+        for (const line of detectionLines) {
+          if (!line.infractionType) continue;
+          if ((prevP.y < line.y && currP.y > line.y) || (prevP.y > line.y && currP.y < line.y)) {
+            let triggered = false; let subType = '';
+            switch (line.infractionType) {
+              case 'LINE_CROSSING': triggered = true; subType = 'LÍNEA CONTINUA'; break;
+              case 'STOP_VIOLATION': if (speedKmh > 5) { triggered = true; subType = 'OMISIÓN STOP'; } break;
+              case 'BUS_LANE_VIOLATION': triggered = true; subType = 'CARRIL BUS'; break;
+              case 'SPEEDING':
+                let limit = selectedConfigs.some(c => c.includes('school')) ? 20 : 50;
+                if (speedKmh > limit) { triggered = true; subType = 'EXCESO VELOCIDAD'; }
+                break;
+            }
+            if (triggered) { track.isInfractor = true; track.subType = subType; }
+          }
+        }
+      }
+
+      // Inter-inference smoothing glide
+      const isInferenceFrame = frameCounterRef.current % inferParams.detectionSkip === 0;
+      tracksRef.current.forEach(track => {
+        if (!matchedTracks.has(track.id)) {
+          track.missedFrames++; track.confidence -= 0.05;
+          if (track.missedFrames <= inferParams.persistence) { track.points.push({ x: track.predictedX, y: track.predictedY, time: now }); }
+        } else if (!isInferenceFrame) {
+          track.points.push({ x: track.predictedX, y: track.predictedY, time: now });
+        }
+      });
+    }
 
     // Rendering pipeline
     tracksRef.current.forEach(track => {
@@ -1221,7 +1228,7 @@ const App = () => {
     });
 
     tracksRef.current = tracksRef.current.filter(t => t.missedFrames < Math.max(30, inferParams.persistence) && t.confidence > 0.05);
-  }, [isPlaying, detectionLines, inferParams, selectedConfigs, isOrtLoaded]);
+  }, [isPlaying, detectionLines, inferParams, selectedConfigs, isOrtLoaded, currentTime, duration]);
 
   useEffect(() => {
     let handle: number;
@@ -1278,8 +1285,8 @@ const App = () => {
                         setTrackingMode(preset.mode as any);
                       }}
                       className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all ${inferParams.confThreshold === preset.params.confThreshold && inferParams.detectionSkip === preset.params.detectionSkip
-                          ? 'bg-cyan-500 text-black shadow-[0_0_15px_#22d3ee]'
-                          : 'text-slate-600 hover:text-slate-400'
+                        ? 'bg-cyan-500 text-black shadow-[0_0_15px_#22d3ee]'
+                        : 'text-slate-600 hover:text-slate-400'
                         }`}
                     >
                       {preset.label}
@@ -1545,10 +1552,6 @@ const App = () => {
 
       {/* MAIN VIEWPORT - Full-Screen High-Fidelity Video */}
       <main className="flex-1 relative flex flex-col bg-black overflow-hidden group/viewport">
-        <canvas
-          ref={canvasRef}
-          className="w-full h-full object-contain"
-        />
         <div className="absolute top-6 left-6 right-6 z-40 flex justify-between pointer-events-none items-start">
           <div className="flex items-center gap-3 bg-black/60 backdrop-blur-xl px-4 py-2 rounded-2xl border border-cyan-500/20">
             <div className="w-2 h-2 bg-cyan-500 rounded-full animate-pulse shadow-[0_0_10px_#22d3ee]" />
@@ -1603,50 +1606,72 @@ const App = () => {
           )}
         </div>
 
-        <div className="h-32 bg-[#020617]/98 border-t border-white/5 flex items-center justify-between px-12 z-50">
-          {/* Left: Playback & Status */}
-          <div className="flex items-center gap-8 w-1/3">
-            <button onClick={() => isPlaying ? safePause() : safePlay()}
-              className={`w-14 h-14 rounded-2xl flex items-center justify-center transition-all ${isPlaying ? 'bg-red-800 shadow-neon' : 'bg-cyan-600 text-black shadow-neon'}`}>
-              {isPlaying ? <Pause size={28} /> : <Play size={28} className="ml-1" />}
-            </button>
-            <div className="flex flex-col">
-              <span className="text-[11px] font-black text-slate-600 uppercase tracking-widest mb-1">Status de Feed</span>
-              <span className="text-xl font-black italic text-white/95 tracking-tighter uppercase whitespace-nowrap">
-                {source === 'live' ? 'Neural_Live_Feed' : source === 'upload' ? 'Forensic_Buffer' : 'System_Standby'}
-              </span>
+        <div className="h-36 bg-[#020617]/98 border-t border-white/5 flex flex-col z-50">
+          {/* Neural Timeline - Forensic Seek Bar */}
+          <div className="h-1.5 w-full bg-white/5 relative group cursor-pointer overflow-hidden">
+            <div
+              className="h-full bg-gradient-to-r from-cyan-600 to-cyan-400 shadow-[0_0_15px_#06b6d4] transition-all duration-300 relative"
+              style={{ width: `${(currentTime / duration) * 100}%` }}
+            >
+              <div className="absolute right-0 top-0 bottom-0 w-4 bg-white/20 blur-sm animate-pulse" />
             </div>
+            <input
+              type="range" min="0" max={duration || 100} step="0.1"
+              value={currentTime}
+              onChange={(e) => {
+                const t = parseFloat(e.target.value);
+                if (videoRef.current) videoRef.current.currentTime = t;
+                setCurrentTime(t);
+              }}
+              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+            />
           </div>
 
-          {/* Center: Detections & Identity */}
-          <div className="flex flex-col items-center justify-center gap-1 w-1/3">
-            <div className="flex items-center gap-3 bg-white/5 px-4 py-1.5 rounded-full border border-white/10 mb-1">
-              <Target size={12} className="text-purple-400" />
-              <span className="text-[9px] font-black text-white/80 uppercase tracking-widest">SENTINEL_V15_NODE</span>
-            </div>
-            <div className="flex gap-8 border-t border-white/5 pt-2">
-              <div className="text-center">
-                <span className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] block">Detecciones</span>
-                <span className="text-2xl font-mono font-black text-cyan-500 leading-none">{cumulativeDetections}</span>
-              </div>
-              <div className="text-center">
-                <span className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] block">Expedientes</span>
-                <span className="text-2xl font-mono font-black text-red-600 leading-none">{cumulativeExpedientes}</span>
+          <div className="flex-1 flex items-center justify-between px-12">
+            {/* Left: Playback & Status */}
+            <div className="flex items-center gap-8 w-1/3">
+              <button onClick={() => isPlaying ? safePause() : safePlay()}
+                className={`w-14 h-14 rounded-2xl flex items-center justify-center transition-all ${isPlaying ? 'bg-red-800 shadow-neon' : 'bg-cyan-600 text-black shadow-neon'}`}>
+                {isPlaying ? <Pause size={28} /> : <Play size={28} className="ml-1" />}
+              </button>
+              <div className="flex flex-col">
+                <span className="text-[11px] font-black text-slate-600 uppercase tracking-widest mb-1">Status de Feed</span>
+                <span className="text-xl font-black italic text-white/95 tracking-tighter uppercase whitespace-nowrap">
+                  {source === 'live' ? 'Neural_Live_Feed' : source === 'upload' ? 'Forensic_Buffer' : 'System_Standby'}
+                </span>
               </div>
             </div>
-          </div>
 
-          {/* Right: Actions */}
-          <div className="flex items-center justify-end gap-6 w-1/3">
-            <div className="hidden lg:flex flex-col text-right">
-              <span className="text-[11px] font-black text-slate-600 uppercase tracking-widest mb-1">Processor_Unit</span>
-              <span className="text-[12px] font-mono text-cyan-400/60 uppercase">Daganzo_Node_01</span>
+            {/* Center: Detections & Identity */}
+            <div className="flex flex-col items-center justify-center gap-1 w-1/3">
+              <div className="flex items-center gap-3 bg-white/5 px-4 py-1.5 rounded-full border border-white/10 mb-1">
+                <Target size={12} className="text-purple-400" />
+                <span className="text-[9px] font-black text-white/80 uppercase tracking-widest">SENTINEL_V15_NODE</span>
+              </div>
+              <div className="flex gap-8 border-t border-white/5 pt-2">
+                <div className="text-center">
+                  <span className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] block">Detecciones</span>
+                  <span className="text-2xl font-mono font-black text-cyan-500 leading-none">{cumulativeDetections}</span>
+                </div>
+                <div className="text-center">
+                  <span className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] block">Expedientes</span>
+                  <span className="text-2xl font-mono font-black text-red-600 leading-none">{cumulativeExpedientes}</span>
+                </div>
+              </div>
             </div>
-            <button onClick={() => document.getElementById('f-up-main')?.click()}
-              className="w-14 h-14 bg-white/5 rounded-2xl hover:bg-white/10 text-slate-500 transition-all border border-white/10 flex items-center justify-center shadow-neon group">
-              <Upload size={24} className="group-hover:text-cyan-400 transition-colors" />
-              <input id="f-up-main" type="file" className="hidden" accept="video/*" onChange={e => { const f = e.target.files?.[0]; if (f) { setVideoUrl(URL.createObjectURL(f)); setSource('upload'); } }} />
-            </button>
+
+            {/* Right: Actions */}
+            <div className="flex items-center justify-end gap-6 w-1/3">
+              <div className="hidden lg:flex flex-col text-right">
+                <span className="text-[11px] font-black text-slate-600 uppercase tracking-widest mb-1">Processor_Unit</span>
+                <span className="text-[12px] font-mono text-cyan-400/60 uppercase">Daganzo_Node_01</span>
+              </div>
+              <button onClick={() => document.getElementById('f-up-main')?.click()}
+                className="w-14 h-14 bg-white/5 rounded-2xl hover:bg-white/10 text-slate-500 transition-all border border-white/10 flex items-center justify-center shadow-neon group">
+                <Upload size={24} className="group-hover:text-cyan-400 transition-colors" />
+                <input id="f-up-main" type="file" className="hidden" accept="video/*" onChange={e => { const f = e.target.files?.[0]; if (f) { setVideoUrl(URL.createObjectURL(f)); setSource('upload'); } }} />
+              </button>
+            </div>
           </div>
         </div>
       </main>
