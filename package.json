@@ -10,6 +10,8 @@
   },
   "dependencies": {
     "@google/genai": "latest",
+    "@tensorflow-models/coco-ssd": "^2.2.3",
+    "@tensorflow/tfjs": "^4.22.0",
     "lucide-react": "0.460.0",
     "onnxruntime-web": "^1.23.2",
     "react": "^19.2.3",

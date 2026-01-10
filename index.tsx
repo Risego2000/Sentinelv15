@@ -15,6 +15,7 @@ import {
   Clock, MapPin, Ruler, BadgeCheck, BarChart3, Binary, Signal, Plus, Fingerprint, ActivitySquare
 } from 'lucide-react';
 import * as ort from 'onnxruntime-web';
+import { YOLO11Detector, ByteTracker, Track as YOLOTrack } from './yolo-tracker';
 
 // Set ORT wasm path
 ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.23.2/dist/';
@@ -180,9 +181,8 @@ const App = () => {
   const frameCounterRef = useRef(0);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const modelRef = useRef<any>(null);
-  const ortSessionRef = useRef<ort.InferenceSession | null>(null);
-  const poseSessionRef = useRef<ort.InferenceSession | null>(null);
+  const yoloDetector = useRef<YOLO11Detector>(new YOLO11Detector());
+  const byteTracker = useRef<ByteTracker>(new ByteTracker());
   const tracksRef = useRef<Track[]>([]);
   const processingRef = useRef(false);
   const lastFrameTime = useRef(Date.now());
@@ -852,42 +852,18 @@ const App = () => {
     const loadModels = async () => {
       try {
         const baseUrl = import.meta.env.BASE_URL || '/';
+        const modelPath = baseUrl.endsWith('/') ? `${baseUrl}upload/yolo11n_640.onnx` : `${baseUrl}/upload/yolo11n_640.onnx`;
+        const posePath = baseUrl.endsWith('/') ? `${baseUrl}upload/yolo11n_pose.onnx` : `${baseUrl}/upload/yolo11n_pose.onnx`;
 
-        // Intentar cargar desde local primero, luego desde HuggingFace CDN
-        const modelSources = {
-          'yolo11n_640.onnx': [
-            baseUrl.endsWith('/') ? `${baseUrl}upload/yolo11n_640.onnx` : `${baseUrl}/upload/yolo11n_640.onnx`,
-            'https://huggingface.co/Xenova/yolov11n/resolve/main/onnx/model.onnx'
-          ],
-          'yolo11n_pose.onnx': [
-            baseUrl.endsWith('/') ? `${baseUrl}upload/yolo11n_pose.onnx` : `${baseUrl}/upload/yolo11n_pose.onnx`,
-            'https://huggingface.co/Xenova/yolov11n-pose/resolve/main/onnx/model.onnx'
-          ]
-        };
+        console.log("🚀 Loading YOLO11 + ByteTrack...");
+        const success = await yoloDetector.current.loadModels(modelPath, posePath);
 
-        const loadModelWithFallback = async (modelName: string, sources: string[]) => {
-          for (let i = 0; i < sources.length; i++) {
-            try {
-              console.log(`🔍 Attempting to load ${modelName} from: ${sources[i]}`);
-              const session = await ort.InferenceSession.create(sources[i], {
-                executionProviders: ['wasm'],
-                graphOptimizationLevel: 'all'
-              });
-              console.log(`✅ Successfully loaded ${modelName} from source ${i + 1}`);
-              return session;
-            } catch (e) {
-              console.warn(`❌ Failed to load ${modelName} from source ${i + 1}:`, e);
-              if (i === sources.length - 1) throw e;
-            }
-          }
-        };
-
-        console.log("Loading YOLOv11 Engine...");
-        ortSessionRef.current = await loadModelWithFallback('yolo11n_640.onnx', modelSources['yolo11n_640.onnx']);
-        poseSessionRef.current = await loadModelWithFallback('yolo11n_pose.onnx', modelSources['yolo11n_pose.onnx']);
-
-        setIsOrtLoaded(true);
-        console.log("✅ SENTINEL_V15 Core Online :: YOLOv11 + ByteTrack Ready");
+        if (success) {
+          setIsOrtLoaded(true);
+          console.log("✅ SENTINEL_V15 Core Online :: YOLO11 + ByteTrack Ready");
+        } else {
+          setStatusMsg("ERROR: Failed to load YOLO11 models");
+        }
       } catch (e) {
         console.error("❌ Model Load Error", e);
         setStatusMsg("ERROR: NEURAL ENGINE FAILURE. CHECK NETWORK/ASSETS.");
