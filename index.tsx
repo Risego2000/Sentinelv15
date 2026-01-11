@@ -198,6 +198,7 @@ const App = () => {
   };
 
   const [activePreset, setActivePreset] = useState<string>('urban-balanced-bytetrack');
+  const lastPosesRef = useRef<PoseDetection[]>([]);
   const [yoloConfig, setYoloConfig] = useState<YoloConfig>(trackingPresets['urban-balanced-bytetrack']);
 
   const frameCounterRef = useRef(0);
@@ -1185,7 +1186,7 @@ const App = () => {
     setStatusMsg("FORENSIC ANALYSIS: DAGANZO_POLICE_ALGO ACTIVE...");
 
     try {
-      const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_API_KEY });
+      const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GOOGLE_GENAI_KEY });
       const systemInstruction = `Eres el AUDITOR FORENSE SUPREMO asignado a la Policía Local de Daganzo de Arriba.
       
       ESPECIFICACIONES TÉCNICAS DEL SISTEMA (SENTINEL V15 - ARQUITECTURA HÍBRIDA EDGE+CLOUD):
@@ -1322,6 +1323,11 @@ const App = () => {
 
     if (runInference) {
       detections = await detectorRef.current.detect(v, yoloConfig.confThreshold);
+      if (poseEstimationEnabled && detectorRef.current.poseSession) {
+        lastPosesRef.current = await detectorRef.current.detectPose(v, 0.5);
+      } else {
+        lastPosesRef.current = [];
+      }
     }
 
     // Update tracker configuration dynamically
@@ -1680,6 +1686,45 @@ const App = () => {
         ctx.fillText(line.label, 15, lineY - 12);
       }
     });
+
+    // STEP 6: Draw Pose Skeletons (if active)
+    if (poseEstimationEnabled && lastPosesRef.current.length > 0) {
+      const poses = lastPosesRef.current;
+      const getVidX = (x: number) => oX + (x / v.videoWidth) * dW;
+      const getVidY = (y: number) => oY + (y / v.videoHeight) * dH;
+
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = '#c084fc'; // Pose Purple
+
+      poses.forEach(pose => {
+        // Draw Skeleton Connections
+        const skeleton = [
+          [15, 13], [13, 11], [16, 14], [14, 12], [11, 12], [5, 11], [6, 12], [5, 6], [5, 7], [6, 8], [7, 9], [8, 10], [1, 2], [0, 1], [0, 2], [1, 3], [2, 4], [3, 5], [4, 6]
+        ];
+
+        ctx.beginPath();
+        skeleton.forEach(([i, j]) => {
+          const kp1 = pose.keypoints[i];
+          const kp2 = pose.keypoints[j];
+          if (kp1 && kp2 && kp1.score > 0.5 && kp2.score > 0.5) {
+            ctx.moveTo(getVidX(kp1.x), getVidY(kp1.y));
+            ctx.lineTo(getVidX(kp2.x), getVidY(kp2.y));
+          }
+        });
+        ctx.stroke();
+
+        // Draw Keypoints
+        ctx.fillStyle = '#f0abfc';
+        pose.keypoints.forEach(kp => {
+          if (kp.score > 0.5) {
+            ctx.beginPath();
+            ctx.arc(getVidX(kp.x), getVidY(kp.y), 3, 0, 2 * Math.PI);
+            ctx.fill();
+          }
+        });
+      });
+    }
+
     ctx.restore();
 
     // STEP 6: Cleanup - Remove tracks that are truly lost
@@ -1719,69 +1764,55 @@ const App = () => {
         </div>
 
         <div className="flex-1 p-6 space-y-8">
-          {/* === YOLOv11 + ByteTrack Configuration === */}
-          <div className="space-y-3">
-            <h3 className="text-[11px] font-black uppercase text-slate-600 tracking-widest flex items-center gap-2 px-2">
-              <Cpu size={12} className="text-cyan-500" /> YOLO11 + ByteTrack Engine
+          {/* === NEURAL TRACKING CORE === */}
+          <div className="space-y-4">
+            <h3 className="text-[11px] font-black uppercase text-slate-500 tracking-widest flex items-center gap-2 px-2">
+              <Cpu size={12} className="text-cyan-500" /> NEURAL TRACKING CORE
             </h3>
 
-            {/* Preset Selector */}
-            <div className="bg-gradient-to-br from-cyan-500/10 to-purple-500/10 border border-cyan-500/20 rounded-2xl p-4 space-y-3">
-              <div className="flex items-center gap-2 mb-2">
-                <Zap size={12} className="text-amber-500" />
-                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Presets de Tracking</span>
-              </div>
-              <div className="grid grid-cols-1 gap-2">
-                {Object.keys(trackingPresets).map(preset => {
-                  const config = trackingPresets[preset];
-                  const presetInfo = {
-                    'highway-fast-bytetrack': { icon: '🏎️', name: 'Autopista', desc: 'ByteTrack', color: 'amber' },
-                    'urban-balanced-bytetrack': { icon: '🏙️', name: 'Urbano', desc: 'ByteTrack', color: 'cyan' },
-                    'precision-slow-botsort': { icon: '🎯', name: 'Precisión', desc: 'BoT-SORT', color: 'purple' },
-                    'forensic-reID-botsort': { icon: '🔬', name: 'Forense Re-ID', desc: 'BoT-SORT', color: 'pink' }
-                  }[preset] || { icon: '⚙️', name: preset, desc: 'Custom', color: 'gray' };
+            {/* Compact Preset Selector (Grid 2x2) */}
+            <div className="grid grid-cols-2 gap-2">
+              {Object.keys(trackingPresets).map(preset => {
+                const config = trackingPresets[preset];
+                const presetInfo = {
+                  'highway-fast-bytetrack': { icon: '🏎️', name: 'Autopista', color: 'amber' },
+                  'urban-balanced-bytetrack': { icon: '🏙️', name: 'Urbano', color: 'cyan' },
+                  'precision-slow-botsort': { icon: '🎯', name: 'Precisión', color: 'purple' },
+                  'forensic-reID-botsort': { icon: '🔬', name: 'Forense', color: 'pink' }
+                }[preset] || { icon: '⚙️', name: 'Custom', color: 'gray' };
 
-                  return (
-                    <button
-                      key={preset}
-                      onClick={() => {
-                        setActivePreset(preset);
-                        setYoloConfig(trackingPresets[preset]);
-                      }}
-                      className={`p-3 rounded-xl border transition-all ${activePreset === preset
-                        ? 'bg-cyan-500/20 border-cyan-500/50 text-cyan-400'
-                        : 'bg-slate-900/50 border-white/5 text-slate-400 hover:border-cyan-500/30'
-                        }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <span className="text-[16px]">{presetInfo.icon}</span>
-                          <div className="flex flex-col items-start">
-                            <span className="text-[11px] font-bold uppercase tracking-tight">
-                              {presetInfo.name}
-                            </span>
-                            <span className={`text-[8px] font-mono px-1.5 py-0.5 rounded ${config.trackerType === 'BoT-SORT'
-                              ? 'bg-purple-500/20 text-purple-400'
-                              : 'bg-cyan-500/20 text-cyan-400'
-                              }`}>
-                              {config.trackerType}
-                            </span>
-                          </div>
-                        </div>
-                        {activePreset === preset && <Check size={14} className="text-green-400" />}
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
+                const isActive = activePreset === preset;
+
+                return (
+                  <button
+                    key={preset}
+                    onClick={() => {
+                      setActivePreset(preset);
+                      setYoloConfig(trackingPresets[preset]);
+                    }}
+                    className={`p-2 rounded-xl border transition-all flex flex-col items-center justify-center gap-1 relative ${isActive
+                        ? `bg-${presetInfo.color}-500/20 border-${presetInfo.color}-500/50 text-${presetInfo.color}-400 shadow-[0_0_15px_rgba(var(--${presetInfo.color}-500-rgb),0.2)]`
+                        : 'bg-slate-900/40 border-white/5 text-slate-500 hover:border-white/20 hover:bg-slate-900/80'
+                      }`}
+                  >
+                    <span className="text-lg filter drop-shadow-md">{presetInfo.icon}</span>
+                    <span className="text-[10px] font-black uppercase tracking-tight">{presetInfo.name}</span>
+                    <span className={`text-[7px] font-mono px-1.5 rounded-full ${config.trackerType === 'BoT-SORT' ? 'bg-purple-950/50 text-purple-300' : 'bg-cyan-950/50 text-cyan-300'}`}>
+                      {config.trackerType === 'BoT-SORT' ? 'BoT-SORT' : 'ByteTrack'}
+                    </span>
+                    {isActive && <Check size={10} className={`absolute top-2 right-2 text-${presetInfo.color}-400`} />}
+                  </button>
+                );
+              })}
             </div>
+          </div>
 
             {/* Advanced YOLO Parameters */}
             <div className="bg-slate-900/40 rounded-2xl p-4 space-y-4">
-              <div className="space-y-1">
-                <div className="flex justify-between text-[9px] font-bold text-slate-500 uppercase">
-                  <span>🎯 YOLO Conf. Threshold</span>
-                  <span className="text-cyan-400">{yoloConfig.confThreshold.toFixed(2)}</span>
+              <div className="space-y-2">
+                <div className="flex justify-between text-[10px] font-bold text-slate-300 uppercase tracking-wide">
+                  <span>🎯 YOLO Confidence</span>
+                  <span className="text-cyan-400 font-mono">{yoloConfig.confThreshold.toFixed(2)}</span>
                 </div>
                 <input
                   type="range" min="0.1" max="0.9" step="0.05"
@@ -1792,9 +1823,9 @@ const App = () => {
               </div>
 
               <div className="space-y-1">
-                <div className="flex justify-between text-[9px] font-bold text-slate-500 uppercase">
+                <div className="flex justify-between text-[10px] font-bold text-slate-300 uppercase tracking-wide">
                   <span>⚡ Frame Skip</span>
-                  <span className="text-cyan-400">{yoloConfig.detectionSkip} frames</span>
+                  <span className="text-amber-400 font-mono">{yoloConfig.detectionSkip} F</span>
                 </div>
                 <input
                   type="range" min="1" max="10" step="1"
@@ -1805,9 +1836,9 @@ const App = () => {
               </div>
 
               <div className="space-y-1">
-                <div className="flex justify-between text-[9px] font-bold text-slate-500 uppercase">
-                  <span>🧲 High Det. Threshold</span>
-                  <span className="text-purple-400">{yoloConfig.highDetThreshold.toFixed(2)}</span>
+                <div className="flex justify-between text-[10px] font-bold text-slate-300 uppercase tracking-wide">
+                  <span>🧲 High Det. Thr</span>
+                  <span className="text-purple-400 font-mono">{yoloConfig.highDetThreshold.toFixed(2)}</span>
                 </div>
                 <input
                   type="range" min="0.3" max="0.9" step="0.05"
@@ -1818,9 +1849,9 @@ const App = () => {
               </div>
 
               <div className="space-y-1">
-                <div className="flex justify-between text-[9px] font-bold text-slate-500 uppercase">
+                <div className="flex justify-between text-[10px] font-bold text-slate-300 uppercase tracking-wide">
                   <span>🔄 Track Buffer</span>
-                  <span className="text-green-400">{yoloConfig.trackBufferFrames} frames</span>
+                  <span className="text-green-400 font-mono">{yoloConfig.trackBufferFrames} F</span>
                 </div>
                 <input
                   type="range" min="10" max="60" step="5"
@@ -1831,9 +1862,9 @@ const App = () => {
               </div>
 
               <div className="space-y-1">
-                <div className="flex justify-between text-[9px] font-bold text-slate-500 uppercase">
-                  <span>🎲 Match IoU Threshold</span>
-                  <span className="text-pink-400">{yoloConfig.matchIouThreshold.toFixed(2)}</span>
+                <div className="flex justify-between text-[10px] font-bold text-slate-300 uppercase tracking-wide">
+                  <span>🎲 Match IoU</span>
+                  <span className="text-pink-400 font-mono">{yoloConfig.matchIouThreshold.toFixed(2)}</span>
                 </div>
                 <input
                   type="range" min="0.1" max="0.7" step="0.05"
@@ -1945,90 +1976,7 @@ const App = () => {
             </div>
           </div>
 
-          {/* === Automatic Mesh Grid Control === */}
-          <div className="space-y-3">
-            <h3 className="text-[11px] font-black uppercase text-slate-600 tracking-widest flex items-center gap-2 px-2">
-              <Layers size={12} className="text-purple-500" /> Sistema de Malla Automática
-            </h3>
 
-            <div className="bg-gradient-to-br from-purple-500/10 to-pink-500/10 border border-purple-500/20 rounded-2xl p-4 space-y-3">
-              {/* Toggle */}
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-bold text-slate-300 uppercase">Malla Activa</span>
-                <button
-                  onClick={() => setMeshGridConfig(c => ({ ...c, enabled: !c.enabled }))}
-                  className={`px-3 py-1 rounded-lg border text-[9px] font-bold transition-all ${meshGridConfig.enabled
-                    ? 'bg-purple-500/30 border-purple-500/50 text-purple-300'
-                    : 'bg-slate-900/50 border-white/10 text-slate-500'
-                    }`}
-                >
-                  {meshGridConfig.enabled ? '✓ ON' : 'OFF'}
-                </button>
-              </div>
-
-              {/* Grid Type */}
-              <div className="grid grid-cols-2 gap-2">
-                {(['horizontal', 'vertical', 'cross', 'perspective'] as const).map(type => (
-                  <button
-                    key={type}
-                    onClick={() => setMeshGridConfig(c => ({ ...c, gridType: type }))}
-                    className={`p-2 rounded-lg border text-[9px] font-bold uppercase transition-all ${meshGridConfig.gridType === type
-                      ? 'bg-purple-500/30 border-purple-500/50 text-purple-300'
-                      : 'bg-slate-900/30 border-white/10 text-slate-500 hover:border-purple-500/30'
-                      }`}
-                  >
-                    {type === 'horizontal' && '━ H'}
-                    {type === 'vertical' && '┃ V'}
-                    {type === 'cross' && '╋ Cross'}
-                    {type === 'perspective' && '📐 Persp'}
-                  </button>
-                ))}
-              </div>
-
-              {/* Spacing */}
-              <div className="space-y-1">
-                <div className="flex justify-between text-[9px] font-bold text-purple-400 uppercase">
-                  <span>Espaciado</span>
-                  <span className="text-purple-300">{meshGridConfig.spacing}px</span>
-                </div>
-                <input
-                  type="range" min="50" max="300" step="50"
-                  value={meshGridConfig.spacing}
-                  onChange={(e) => setMeshGridConfig(c => ({ ...c, spacing: parseInt(e.target.value) }))}
-                  className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-purple-500"
-                />
-              </div>
-
-              {/* Perspective Controls */}
-              {meshGridConfig.gridType === 'perspective' && (
-                <>
-                  <div className="space-y-1 pt-2 border-t border-purple-500/20">
-                    <div className="flex justify-between text-[9px] font-bold text-pink-400 uppercase">
-                      <span>Punto Fuga (Y)</span>
-                      <span className="text-pink-300">{meshGridConfig.perspectiveVanishingY}</span>
-                    </div>
-                    <input
-                      type="range" min="100" max="800" step="50"
-                      value={meshGridConfig.perspectiveVanishingY}
-                      onChange={(e) => setMeshGridConfig(c => ({ ...c, perspectiveVanishingY: parseInt(e.target.value) }))}
-                      className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-pink-500"
-                    />
-                  </div>
-
-                  <div className="flex items-center justify-between">
-                    <span className="text-[8px] text-slate-400 uppercase">Ángulos Adaptativos</span>
-                    <button
-                      onClick={() => setMeshGridConfig(c => ({ ...c, angleAdaptive: !c.angleAdaptive }))}
-                      className={`px-2 py-0.5 rounded text-[8px] font-bold ${meshGridConfig.angleAdaptive ? 'bg-pink-500/30 text-pink-300' : 'bg-slate-800 text-slate-500'
-                        }`}
-                    >
-                      {meshGridConfig.angleAdaptive ? 'ON' : 'OFF'}
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
 
           <div className="space-y-4">
             <div className="flex items-center justify-between">
@@ -2195,10 +2143,7 @@ const App = () => {
             </div>
           </div>
 
-          <div className="flex flex-col gap-2">
-            <StatusBadge label="RADAR_ACTIVE" active={isPlaying} />
-            <StatusBadge label="AI_CORE_SYNC" active={isAnalyzing} color="red" pulse={isAnalyzing} />
-          </div>
+
         </div>
 
         <div className="p-6 border-t border-white/5 mt-auto">
@@ -2206,10 +2151,10 @@ const App = () => {
             <Wifi size={16} /> <span className="text-[12px] font-black uppercase tracking-widest text-inherit">Sync Radar Daganzo</span>
           </button>
         </div>
-      </aside>
+      </aside >
 
-      {/* MAIN VIEWPORT - Full-Screen High-Fidelity Video */}
-      <main className="flex-1 relative flex flex-col bg-black overflow-hidden group/viewport">
+  {/* MAIN VIEWPORT - Full-Screen High-Fidelity Video */ }
+  < main className = "flex-1 relative flex flex-col bg-black overflow-hidden group/viewport" >
         <canvas
           ref={canvasRef}
           className="w-full h-full object-contain"
@@ -2221,7 +2166,7 @@ const App = () => {
           </div>
         </div>
 
-        {/* Video Viewport - Absolute Protagonist */}
+{/* Video Viewport - Absolute Protagonist */ }
         <div className="absolute inset-0 z-10">
           {source === 'none' ? (
             <div className="w-full h-full flex flex-col items-center justify-center gap-8 lg:gap-12 animate-in zoom-in-95 duration-1000">
@@ -2314,10 +2259,10 @@ const App = () => {
             </button>
           </div>
         </div>
-      </main>
+      </main >
 
-      {/* REGISTRY SIDEBAR */}
-      <aside className="w-full lg:w-96 border-l border-white/5 flex flex-col z-50 bg-[#020617]/98 h-1/2 lg:h-full backdrop-blur-2xl">
+  {/* REGISTRY SIDEBAR */ }
+  < aside className = "w-full lg:w-96 border-l border-white/5 flex flex-col z-50 bg-[#020617]/98 h-1/2 lg:h-full backdrop-blur-2xl" >
         <div className="p-8 border-b border-white/5 flex items-center justify-between bg-red-950/10">
           <div className="flex flex-col">
             <span className="text-xl font-black italic tracking-tighter text-red-500 uppercase leading-none">EVIDENCE</span>
@@ -2341,210 +2286,212 @@ const App = () => {
             </div>
           ))}
         </div>
-      </aside>
+      </aside >
 
-      {/* DETAIL MODAL - FORENSIC REPORT DESIGN */}
-      {selectedLog && (
-        <div className="fixed inset-0 z-[200] bg-black/95 flex items-center justify-center p-6 backdrop-blur-3xl animate-in fade-in duration-500">
-          <div className="bg-[#050914] w-full max-w-7xl h-[90vh] rounded-[60px] border border-white/5 overflow-hidden flex flex-col shadow-2xl relative animate-in zoom-in-95">
+  {/* DETAIL MODAL - FORENSIC REPORT DESIGN */ }
+{
+  selectedLog && (
+    <div className="fixed inset-0 z-[200] bg-black/95 flex items-center justify-center p-6 backdrop-blur-3xl animate-in fade-in duration-500">
+      <div className="bg-[#050914] w-full max-w-7xl h-[90vh] rounded-[60px] border border-white/5 overflow-hidden flex flex-col shadow-2xl relative animate-in zoom-in-95">
 
-            <button onClick={() => setSelectedLog(null)} className="absolute top-6 right-6 z-[210] p-3 bg-slate-900/90 rounded-full hover:bg-red-700 text-white transition-all shadow-neon border border-white/10">
-              <X size={24} />
-            </button>
+        <button onClick={() => setSelectedLog(null)} className="absolute top-6 right-6 z-[210] p-3 bg-slate-900/90 rounded-full hover:bg-red-700 text-white transition-all shadow-neon border border-white/10">
+          <X size={24} />
+        </button>
 
-            <div className="flex-1 p-6 lg:p-8 flex flex-col lg:flex-row gap-6 overflow-hidden">
+        <div className="flex-1 p-6 lg:p-8 flex flex-col lg:flex-row gap-6 overflow-hidden">
 
-              {/* Visual Evidence Section (Left) */}
-              <div className="flex-1 flex flex-col gap-4 overflow-y-auto custom-scrollbar">
+          {/* Visual Evidence Section (Left) */}
+          <div className="flex-1 flex flex-col gap-4 overflow-y-auto custom-scrollbar">
 
-                {/* Header: Evidence Clip Info */}
-                <div className="flex items-center justify-between">
-                  <h3 className="text-cyan-500 font-black uppercase text-sm tracking-[0.2em] flex items-center gap-4 italic">
-                    <Video size={20} className="animate-pulse" /> EVIDENCE CLIP (HD_10S)
-                  </h3>
-                  <div className="flex gap-4">
-                    <span className="bg-slate-900 border border-white/10 px-4 py-1.5 rounded-xl text-[12px] font-mono text-slate-400 flex items-center gap-2">
-                      <Clock size={12} /> {selectedLog.time}
-                    </span>
-                    <span className="bg-slate-900 border border-white/10 px-4 py-1.5 rounded-xl text-[12px] font-mono text-purple-400 flex items-center gap-2">
-                      <Ruler size={12} /> 3M_LANE_CALIB
-                    </span>
-                  </div>
-                </div>
+            {/* Header: Evidence Clip Info */}
+            <div className="flex items-center justify-between">
+              <h3 className="text-cyan-500 font-black uppercase text-sm tracking-[0.2em] flex items-center gap-4 italic">
+                <Video size={20} className="animate-pulse" /> EVIDENCE CLIP (HD_10S)
+              </h3>
+              <div className="flex gap-4">
+                <span className="bg-slate-900 border border-white/10 px-4 py-1.5 rounded-xl text-[12px] font-mono text-slate-400 flex items-center gap-2">
+                  <Clock size={12} /> {selectedLog.time}
+                </span>
+                <span className="bg-slate-900 border border-white/10 px-4 py-1.5 rounded-xl text-[12px] font-mono text-purple-400 flex items-center gap-2">
+                  <Ruler size={12} /> 3M_LANE_CALIB
+                </span>
+              </div>
+            </div>
 
-                {/* Main Visual Buffer */}
-                <div className="relative bg-[#0a0a0a] rounded-[60px] overflow-hidden border border-white/10 shadow-[0_0_80px_rgba(34,211,238,0.1)] group">
+            {/* Main Visual Buffer */}
+            <div className="relative bg-[#0a0a0a] rounded-[60px] overflow-hidden border border-white/10 shadow-[0_0_80px_rgba(34,211,238,0.1)] group">
 
-                  {/* Red Banner - Top Center */}
-                  <div className="absolute top-0 left-0 right-0 p-8 flex justify-center pointer-events-none z-20">
-                    <div className="bg-red-700 text-white px-10 py-4 rounded-b-[40px] font-black text-lg uppercase tracking-tighter shadow-2xl text-center leading-tight max-w-[80%]">
-                      {selectedLog.legalArticle || 'ART. 151 DEL REGLAMENTO GENERAL DE CIRCULACIÓN'}
-                    </div>
-                  </div>
-
-                  {/* The Video/Image */}
-                  <div className="aspect-video relative">
-                    {selectedLog.videoUrl ? (
-                      <>
-                        <video
-                          ref={(el) => {
-                            if (el) {
-                              el.onloadedmetadata = () => { };
-                              el.ontimeupdate = () => { };
-                            }
-                          }}
-                          src={selectedLog.videoUrl}
-                          autoPlay
-                          loop
-                          muted
-                          className="w-full h-full object-contain brightness-110 contrast-125"
-                        />
-
-                        {/* Video Timeline Controls */}
-                        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 to-transparent p-4 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <div className="flex items-center gap-3">
-                            <button className="w-8 h-8 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 transition-colors">
-                              <Play size={14} className="text-white" />
-                            </button>
-                            <div className="flex-1 h-1 bg-white/20 rounded-full overflow-hidden cursor-pointer group/timeline">
-                              <div className="h-full bg-cyan-500 w-1/2" />
-                            </div>
-                            <span className="text-xs font-mono text-white/60">00:00 / 00:10</span>
-                          </div>
-                        </div>
-                      </>
-                    ) : (
-                      <img src={selectedLog.image} className="w-full h-full object-contain" />
-                    )}
-                  </div>
-
-                  <div className="absolute inset-0 bg-red-600/5 pointer-events-none" />
-                </div>
-
-                {/* Metadata Section Below Video */}
-                <div className="bg-[#0a0a0a]/50 p-10 rounded-[50px] border border-white/5 space-y-4">
-                  <div className="text-cyan-500 font-black uppercase text-sm tracking-[0.4em] italic flex items-center gap-2">
-                    <Target size={16} /> {selectedLog.vehicleType} / FORENSIC_CALIB
-                  </div>
-                  <h2 className="text-5xl lg:text-6xl font-black italic text-white tracking-tighter uppercase font-mono">
-                    {selectedLog.plate}
-                  </h2>
-                </div>
-
-                {/* Sensor Pillars (Vertical Capsule Shapes) */}
-                <div className="grid grid-cols-4 gap-6 px-2">
-                  {/* Sensor 1 */}
-                  <div className="bg-[#0a0a0a] aspect-[3/4.5] rounded-[60px] border border-white/5 flex flex-col items-center justify-between py-10 text-center group transition-transform hover:scale-105">
-                    <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest font-mono">Calibración</span>
-                    <div className="flex flex-col items-center">
-                      <span className="text-[16px] font-black text-purple-500 uppercase leading-none">CARRIL</span>
-                      <span className="text-[18px] font-black text-purple-500 font-mono">3.0M</span>
-                    </div>
-                    <div className="w-2 h-2 rounded-full bg-purple-500/30 border border-purple-500 animate-pulse" />
-                  </div>
-
-                  {/* Sensor 2 */}
-                  <div className="bg-[#0a0a0a] aspect-[3/4.5] rounded-[60px] border border-white/5 flex flex-col items-center justify-between py-10 text-center transition-transform hover:scale-105">
-                    <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest font-mono">Velocidad_Est.</span>
-                    <div className="flex flex-col items-center">
-                      <span className="text-4xl font-mono font-black text-amber-500 leading-none">{selectedLog.telemetry?.speedEstimated.replace(' km/h', '')}</span>
-                      <span className="text-[14px] font-black text-amber-500/50 uppercase font-mono">km/h</span>
-                    </div>
-                    <Gauge size={18} className="text-amber-500/40" />
-                  </div>
-
-                  {/* Sensor 3 */}
-                  <div className="bg-[#0a0a0a] aspect-[3/4.5] rounded-[60px] border border-white/5 flex flex-col items-center justify-between py-10 text-center transition-transform hover:scale-105">
-                    <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest font-mono">Confianza_AI</span>
-                    <span className="text-4xl font-mono font-black text-cyan-400 leading-none">{(selectedLog.confidence * 100).toFixed(0)}%</span>
-                    <div className="w-12 h-1 bg-cyan-500/20 rounded-full overflow-hidden">
-                      <div className="h-full bg-cyan-500" style={{ width: `${selectedLog.confidence * 100}%` }} />
-                    </div>
-                  </div>
-
-                  {/* Sensor 4 */}
-                  <div className="bg-[#0a0a0a] aspect-[3/4.5] rounded-[60px] border border-white/5 flex flex-col items-center justify-between py-10 text-center transition-transform hover:scale-105">
-                    <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest font-mono">Severidad</span>
-                    <span className="text-[16px] font-black text-red-600 uppercase font-mono leading-none tracking-tighter whitespace-nowrap">{selectedLog.severity}</span>
-                    <AlertTriangle size={20} className="text-red-600 animate-bounce" />
-                  </div>
-                </div>
-
-                {/* NEURAL FORENSIC BUFFER: Multiple snapshots display */}
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between px-4">
-                    <h3 className="text-cyan-500 font-black uppercase text-[12px] tracking-[0.3em] flex items-center gap-3 italic">
-                      <Binary size={16} className="text-cyan-500" /> NEURAL_FORENSIC_BUFFER [BIF]
-                    </h3>
-                    <span className="text-[11px] font-mono text-slate-500 uppercase">{selectedLog.snapshots?.length || 0} SECUENTIAL_FRAMES_CAPTURED</span>
-                  </div>
-                  <div className="flex gap-4 overflow-x-auto pb-4 custom-scrollbar snap-x">
-                    {selectedLog.snapshots?.map((snap, i) => (
-                      <div key={i} className="min-w-[120px] aspect-[4/3] bg-slate-900 rounded-2xl border border-white/10 overflow-hidden snap-center group relative cursor-pointer hover:border-cyan-500/50 transition-all shrink-0">
-                        <img src={`data:image/jpeg;base64,${snap}`} className="w-full h-full object-cover grayscale brightness-110 contrast-125 group-hover:grayscale-0 transition-all" />
-                        <div className="absolute bottom-1 right-2 text-[10px] font-mono text-white/40">F_{i.toString().padStart(2, '0')}</div>
-                      </div>
-                    ))}
-                    {(!selectedLog.snapshots || selectedLog.snapshots.length === 0) && (
-                      <div className="w-full py-12 flex flex-col items-center justify-center border border-dashed border-white/5 rounded-3xl text-slate-600">
-                        <ScanLine size={32} className="mb-2 opacity-20" />
-                        <span className="text-[12px] font-black uppercase tracking-widest">No BIF Data Available</span>
-                      </div>
-                    )}
-                  </div>
+              {/* Red Banner - Top Center */}
+              <div className="absolute top-0 left-0 right-0 p-8 flex justify-center pointer-events-none z-20">
+                <div className="bg-red-700 text-white px-10 py-4 rounded-b-[40px] font-black text-lg uppercase tracking-tighter shadow-2xl text-center leading-tight max-w-[80%]">
+                  {selectedLog.legalArticle || 'ART. 151 DEL REGLAMENTO GENERAL DE CIRCULACIÓN'}
                 </div>
               </div>
 
-              {/* Narrative Report Section (Right side) */}
-              <div className="w-full lg:w-[480px] flex flex-col gap-10 lg:pt-2">
+              {/* The Video/Image */}
+              <div className="aspect-video relative">
+                {selectedLog.videoUrl ? (
+                  <>
+                    <video
+                      ref={(el) => {
+                        if (el) {
+                          el.onloadedmetadata = () => { };
+                          el.ontimeupdate = () => { };
+                        }
+                      }}
+                      src={selectedLog.videoUrl}
+                      autoPlay
+                      loop
+                      muted
+                      className="w-full h-full object-contain brightness-110 contrast-125"
+                    />
 
-                <div className="space-y-6">
-                  <h3 className="text-red-500 font-black uppercase text-sm tracking-[0.2em] italic flex items-center gap-4">
-                    <AlertTriangle size={20} className="text-red-600 animate-pulse" /> FORENSIC EVIDENCE REPORT
-                  </h3>
-                  <div className="bg-[#0c0c0c] p-10 lg:p-14 rounded-[50px] border border-red-900/10 shadow-inner relative">
-                    <p className="text-slate-100 italic text-2xl lg:text-3xl leading-relaxed font-serif">
-                      "{selectedLog.description}"
-                    </p>
-                  </div>
-                </div>
-
-                {/* Evidence Log List */}
-                <div className="flex-1 p-8 bg-[#0a0a0a] rounded-[50px] border border-white/5 flex flex-col overflow-hidden">
-                  <h3 className="text-[12px] font-black uppercase text-slate-500 flex items-center gap-4 italic tracking-widest mb-6 border-b border-white/5 pb-4">
-                    <Terminal size={18} className="text-cyan-500" /> ORDERED_EVIDENCE_LOG
-                  </h3>
-                  <div className="space-y-4 overflow-y-auto custom-scrollbar pr-2">
-                    {selectedLog.reasoning?.map((r, i) => (
-                      <div key={i} className="flex gap-4 text-[13px] font-mono leading-relaxed py-3 border-b border-white/5 last:border-0 text-slate-400">
-                        <span className="text-red-600 font-black h-fit shrink-0">_&gt;</span>
-                        <span>{r}</span>
+                    {/* Video Timeline Controls */}
+                    <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 to-transparent p-4 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div className="flex items-center gap-3">
+                        <button className="w-8 h-8 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 transition-colors">
+                          <Play size={14} className="text-white" />
+                        </button>
+                        <div className="flex-1 h-1 bg-white/20 rounded-full overflow-hidden cursor-pointer group/timeline">
+                          <div className="h-full bg-cyan-500 w-1/2" />
+                        </div>
+                        <span className="text-xs font-mono text-white/60">00:00 / 00:10</span>
                       </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Certification & Validating Action */}
-                <div className="space-y-6">
-                  <div className="flex items-center gap-6 p-8 bg-slate-950/40 rounded-[40px] border border-white/5">
-                    <DaganzoEmblem className="w-12 h-14 opacity-50" />
-                    <div className="flex flex-col">
-                      <span className="text-[12px] font-black text-white/30 uppercase tracking-[0.2em]">CERTIFICADO POR</span>
-                      <span className="text-[11px] font-black text-cyan-500 uppercase">P.L. DAGANZO DE ARRIBA</span>
                     </div>
-                  </div>
+                  </>
+                ) : (
+                  <img src={selectedLog.image} className="w-full h-full object-contain" />
+                )}
+              </div>
 
-                  <button onClick={() => setSelectedLog(null)} className="w-full py-10 bg-[#b91c1c] text-white rounded-[45px] font-black uppercase tracking-[0.5em] text-3xl shadow-[0_20px_60px_rgba(185,28,28,0.3)] hover:bg-red-600 hover:scale-[1.01] transition-all transform active:scale-95 leading-none">
-                    VALIDAR EXPEDIENTE
-                  </button>
+              <div className="absolute inset-0 bg-red-600/5 pointer-events-none" />
+            </div>
+
+            {/* Metadata Section Below Video */}
+            <div className="bg-[#0a0a0a]/50 p-10 rounded-[50px] border border-white/5 space-y-4">
+              <div className="text-cyan-500 font-black uppercase text-sm tracking-[0.4em] italic flex items-center gap-2">
+                <Target size={16} /> {selectedLog.vehicleType} / FORENSIC_CALIB
+              </div>
+              <h2 className="text-5xl lg:text-6xl font-black italic text-white tracking-tighter uppercase font-mono">
+                {selectedLog.plate}
+              </h2>
+            </div>
+
+            {/* Sensor Pillars (Vertical Capsule Shapes) */}
+            <div className="grid grid-cols-4 gap-6 px-2">
+              {/* Sensor 1 */}
+              <div className="bg-[#0a0a0a] aspect-[3/4.5] rounded-[60px] border border-white/5 flex flex-col items-center justify-between py-10 text-center group transition-transform hover:scale-105">
+                <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest font-mono">Calibración</span>
+                <div className="flex flex-col items-center">
+                  <span className="text-[16px] font-black text-purple-500 uppercase leading-none">CARRIL</span>
+                  <span className="text-[18px] font-black text-purple-500 font-mono">3.0M</span>
                 </div>
+                <div className="w-2 h-2 rounded-full bg-purple-500/30 border border-purple-500 animate-pulse" />
+              </div>
+
+              {/* Sensor 2 */}
+              <div className="bg-[#0a0a0a] aspect-[3/4.5] rounded-[60px] border border-white/5 flex flex-col items-center justify-between py-10 text-center transition-transform hover:scale-105">
+                <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest font-mono">Velocidad_Est.</span>
+                <div className="flex flex-col items-center">
+                  <span className="text-4xl font-mono font-black text-amber-500 leading-none">{selectedLog.telemetry?.speedEstimated.replace(' km/h', '')}</span>
+                  <span className="text-[14px] font-black text-amber-500/50 uppercase font-mono">km/h</span>
+                </div>
+                <Gauge size={18} className="text-amber-500/40" />
+              </div>
+
+              {/* Sensor 3 */}
+              <div className="bg-[#0a0a0a] aspect-[3/4.5] rounded-[60px] border border-white/5 flex flex-col items-center justify-between py-10 text-center transition-transform hover:scale-105">
+                <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest font-mono">Confianza_AI</span>
+                <span className="text-4xl font-mono font-black text-cyan-400 leading-none">{(selectedLog.confidence * 100).toFixed(0)}%</span>
+                <div className="w-12 h-1 bg-cyan-500/20 rounded-full overflow-hidden">
+                  <div className="h-full bg-cyan-500" style={{ width: `${selectedLog.confidence * 100}%` }} />
+                </div>
+              </div>
+
+              {/* Sensor 4 */}
+              <div className="bg-[#0a0a0a] aspect-[3/4.5] rounded-[60px] border border-white/5 flex flex-col items-center justify-between py-10 text-center transition-transform hover:scale-105">
+                <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest font-mono">Severidad</span>
+                <span className="text-[16px] font-black text-red-600 uppercase font-mono leading-none tracking-tighter whitespace-nowrap">{selectedLog.severity}</span>
+                <AlertTriangle size={20} className="text-red-600 animate-bounce" />
+              </div>
+            </div>
+
+            {/* NEURAL FORENSIC BUFFER: Multiple snapshots display */}
+            <div className="space-y-4">
+              <div className="flex items-center justify-between px-4">
+                <h3 className="text-cyan-500 font-black uppercase text-[12px] tracking-[0.3em] flex items-center gap-3 italic">
+                  <Binary size={16} className="text-cyan-500" /> NEURAL_FORENSIC_BUFFER [BIF]
+                </h3>
+                <span className="text-[11px] font-mono text-slate-500 uppercase">{selectedLog.snapshots?.length || 0} SECUENTIAL_FRAMES_CAPTURED</span>
+              </div>
+              <div className="flex gap-4 overflow-x-auto pb-4 custom-scrollbar snap-x">
+                {selectedLog.snapshots?.map((snap, i) => (
+                  <div key={i} className="min-w-[120px] aspect-[4/3] bg-slate-900 rounded-2xl border border-white/10 overflow-hidden snap-center group relative cursor-pointer hover:border-cyan-500/50 transition-all shrink-0">
+                    <img src={`data:image/jpeg;base64,${snap}`} className="w-full h-full object-cover grayscale brightness-110 contrast-125 group-hover:grayscale-0 transition-all" />
+                    <div className="absolute bottom-1 right-2 text-[10px] font-mono text-white/40">F_{i.toString().padStart(2, '0')}</div>
+                  </div>
+                ))}
+                {(!selectedLog.snapshots || selectedLog.snapshots.length === 0) && (
+                  <div className="w-full py-12 flex flex-col items-center justify-center border border-dashed border-white/5 rounded-3xl text-slate-600">
+                    <ScanLine size={32} className="mb-2 opacity-20" />
+                    <span className="text-[12px] font-black uppercase tracking-widest">No BIF Data Available</span>
+                  </div>
+                )}
               </div>
             </div>
           </div>
-        </div>
-      )}
 
-      <style>{`
+          {/* Narrative Report Section (Right side) */}
+          <div className="w-full lg:w-[480px] flex flex-col gap-10 lg:pt-2">
+
+            <div className="space-y-6">
+              <h3 className="text-red-500 font-black uppercase text-sm tracking-[0.2em] italic flex items-center gap-4">
+                <AlertTriangle size={20} className="text-red-600 animate-pulse" /> FORENSIC EVIDENCE REPORT
+              </h3>
+              <div className="bg-[#0c0c0c] p-10 lg:p-14 rounded-[50px] border border-red-900/10 shadow-inner relative">
+                <p className="text-slate-100 italic text-2xl lg:text-3xl leading-relaxed font-serif">
+                  "{selectedLog.description}"
+                </p>
+              </div>
+            </div>
+
+            {/* Evidence Log List */}
+            <div className="flex-1 p-8 bg-[#0a0a0a] rounded-[50px] border border-white/5 flex flex-col overflow-hidden">
+              <h3 className="text-[12px] font-black uppercase text-slate-500 flex items-center gap-4 italic tracking-widest mb-6 border-b border-white/5 pb-4">
+                <Terminal size={18} className="text-cyan-500" /> ORDERED_EVIDENCE_LOG
+              </h3>
+              <div className="space-y-4 overflow-y-auto custom-scrollbar pr-2">
+                {selectedLog.reasoning?.map((r, i) => (
+                  <div key={i} className="flex gap-4 text-[13px] font-mono leading-relaxed py-3 border-b border-white/5 last:border-0 text-slate-400">
+                    <span className="text-red-600 font-black h-fit shrink-0">_&gt;</span>
+                    <span>{r}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Certification & Validating Action */}
+            <div className="space-y-6">
+              <div className="flex items-center gap-6 p-8 bg-slate-950/40 rounded-[40px] border border-white/5">
+                <DaganzoEmblem className="w-12 h-14 opacity-50" />
+                <div className="flex flex-col">
+                  <span className="text-[12px] font-black text-white/30 uppercase tracking-[0.2em]">CERTIFICADO POR</span>
+                  <span className="text-[11px] font-black text-cyan-500 uppercase">P.L. DAGANZO DE ARRIBA</span>
+                </div>
+              </div>
+
+              <button onClick={() => setSelectedLog(null)} className="w-full py-10 bg-[#b91c1c] text-white rounded-[45px] font-black uppercase tracking-[0.5em] text-3xl shadow-[0_20px_60px_rgba(185,28,28,0.3)] hover:bg-red-600 hover:scale-[1.01] transition-all transform active:scale-95 leading-none">
+                VALIDAR EXPEDIENTE
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+<style>{`
         @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@100;300;400;700;900&family=JetBrains+Mono:wght@400;700&display=swap');
         
         :root {
@@ -2604,7 +2551,7 @@ const App = () => {
           box-shadow: 0 0 8px rgba(245, 158, 11, 0.5);
         }
       `}</style>
-    </div>
+    </div >
   );
 };
 
