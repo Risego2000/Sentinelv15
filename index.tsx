@@ -239,6 +239,141 @@ const App = () => {
     { y: 500, type: 'solid', direction: 'bidirectional', label: 'LÍNEA CONTINUA CENTRAL', infractionType: 'LINE_CROSSING' }
   ]);
 
+  // === Automatic Mesh Grid Generator ===
+  const generateMeshGrid = useCallback((config: MeshGridConfig): DetectionLine[] => {
+    if (!config.enabled) return [];
+
+    const lines: DetectionLine[] = [];
+    const canvasWidth = 1000; // Normalized space
+    const canvasHeight = 1000;
+
+    switch (config.gridType) {
+      case 'horizontal':
+        // Simple horizontal lines
+        for (let y = config.spacing; y < canvasHeight; y += config.spacing) {
+          lines.push({
+            y,
+            type: 'divider',
+            direction: 'bidirectional',
+            label: `GRID_H_${y}`,
+            infractionType: undefined
+          });
+        }
+        break;
+
+      case 'vertical':
+        // Vertical lines (using x1,y1,x2,y2)
+        for (let x = config.spacing; x < canvasWidth; x += config.spacing) {
+          lines.push({
+            y: 0,
+            x1: x,
+            y2: canvasHeight,
+            x2: x,
+            type: 'divider',
+            direction: 'bidirectional',
+            label: `GRID_V_${x}`,
+            infractionType: undefined
+          });
+        }
+        break;
+
+      case 'cross':
+        // Both horizontal and vertical
+        for (let y = config.spacing; y < canvasHeight; y += config.spacing) {
+          lines.push({
+            y,
+            type: 'divider',
+            direction: 'bidirectional',
+            label: `GRID_H_${y}`,
+            infractionType: undefined
+          });
+        }
+        for (let x = config.spacing; x < canvasWidth; x += config.spacing) {
+          lines.push({
+            y: 0,
+            x1: x,
+            y2: canvasHeight,
+            x2: x,
+            type: 'divider',
+            direction: 'bidirectional',
+            label: `GRID_V_${x}`,
+            infractionType: undefined
+          });
+        }
+        break;
+
+      case 'perspective':
+        // Perspective grid with adaptive angles
+        const vanishingY = config.perspectiveVanishingY;
+        const vanishingX = canvasWidth / 2; // Center
+
+        // Horizontal perspective lines (converging to vanishing point)
+        for (let y = config.spacing; y < canvasHeight; y += config.spacing) {
+          if (!config.angleAdaptive) {
+            // Simple horizontal
+            lines.push({
+              y,
+              type: 'divider',
+              direction: 'bidirectional',
+              label: `PERSP_H_${y}`,
+              infractionType: undefined
+            });
+          } else {
+            // Angled towards vanishing point
+            const distanceFromVanishing = Math.abs(y - vanishingY);
+            const angleOffset = (y - vanishingY) / 10; // Subtle angle
+
+            lines.push({
+              y,
+              x1: 0,
+              y2: y,
+              x2: canvasWidth,
+              angle: Math.atan2(angleOffset, canvasWidth) * (180 / Math.PI),
+              type: 'divider',
+              direction: 'bidirectional',
+              label: `PERSP_H_${y}`,
+              infractionType: undefined
+            });
+          }
+        }
+
+        // Radiating lines from vanishing point
+        const numRadialLines = Math.floor(canvasWidth / config.spacing);
+        for (let i = 0; i < numRadialLines; i++) {
+          const bottomX = (i / numRadialLines) * canvasWidth;
+          lines.push({
+            y: vanishingY,
+            x1: vanishingX,
+            y2: canvasHeight,
+            x2: bottomX,
+            angle: Math.atan2(canvasHeight - vanishingY, bottomX - vanishingX) * (180 / Math.PI),
+            type: 'divider',
+            direction: 'bidirectional',
+            label: `PERSP_R_${i}`,
+            infractionType: undefined
+          });
+        }
+        break;
+    }
+
+    return lines;
+  }, []);
+
+  // Apply mesh grid when config changes
+  useEffect(() => {
+    if (meshGridConfig.enabled) {
+      const meshLines = generateMeshGrid(meshGridConfig);
+      setDetectionLines(prev => {
+        // Keep manual lines, add mesh lines
+        const manualLines = prev.filter(l => !l.label.startsWith('GRID_') && !l.label.startsWith('PERSP_'));
+        return [...manualLines, ...meshLines];
+      });
+    } else {
+      // Remove mesh lines
+      setDetectionLines(prev => prev.filter(l => !l.label.startsWith('GRID_') && !l.label.startsWith('PERSP_')));
+    }
+  }, [meshGridConfig, generateMeshGrid]);
+
   // Comprehensive Road Configuration Presets with Integrated Forensic Directives
   interface RoadPreset {
     lines: DetectionLine[];
@@ -1395,27 +1530,47 @@ const App = () => {
           break;
       }
 
-      ctx.globalAlpha = (line.type === 'solid' || line.type === 'stop') ? 0.8 : 0.5;
-      ctx.beginPath();
-      ctx.moveTo(0, lineY);
-      ctx.lineTo(canvas.width, lineY);
-      ctx.stroke();
+      ctx.globalAlpha = (line.type === 'solid' || line.type === 'stop') ? 0.8 : (line.label.startsWith('GRID_') || line.label.startsWith('PERSP_')) ? 0.15 : 0.5;
 
-      // Line markers (ticks)
-      ctx.setLineDash([]);
-      ctx.lineWidth = 2;
-      for (let x = 0; x < canvas.width; x += 120) {
+      // Check if line is angled (has x1,y1,x2,y2 coordinates)
+      if (line.x1 !== undefined && line.y2 !== undefined && line.x2 !== undefined) {
+        // Angled line rendering
+        const x1 = oX + (line.x1 / 1000) * dW;
+        const y1 = oY + (line.y / 1000) * dH;
+        const x2 = oX + (line.x2 / 1000) * dW;
+        const y2 = oY + (line.y2 / 1000) * dH;
+
         ctx.beginPath();
-        ctx.moveTo(x, lineY - 6);
-        ctx.lineTo(x, lineY + 6);
+        ctx.moveTo(x1, y1);
+        ctx.lineTo(x2, y2);
         ctx.stroke();
+      } else {
+        // Standard horizontal line
+        ctx.beginPath();
+        ctx.moveTo(0, lineY);
+        ctx.lineTo(canvas.width, lineY);
+        ctx.stroke();
+
+        // Line markers (ticks) - only for non-grid lines
+        if (!line.label.startsWith('GRID_') && !line.label.startsWith('PERSP_')) {
+          ctx.setLineDash([]);
+          ctx.lineWidth = 2;
+          for (let x = 0; x < canvas.width; x += 120) {
+            ctx.beginPath();
+            ctx.moveTo(x, lineY - 6);
+            ctx.lineTo(x, lineY + 6);
+            ctx.stroke();
+          }
+        }
       }
 
-      // Line label
-      ctx.fillStyle = ctx.strokeStyle;
-      ctx.font = 'bold 10px monospace';
-      ctx.globalAlpha = 0.9;
-      ctx.fillText(line.label, 15, lineY - 12);
+      // Line label - only for important lines (not grid)
+      if (!line.label.startsWith('GRID_') && !line.label.startsWith('PERSP_')) {
+        ctx.fillStyle = ctx.strokeStyle;
+        ctx.font = 'bold 10px monospace';
+        ctx.globalAlpha = 0.9;
+        ctx.fillText(line.label, 15, lineY - 12);
+      }
     });
     ctx.restore();
 
