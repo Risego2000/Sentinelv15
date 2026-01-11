@@ -14,7 +14,7 @@ import {
   AlertTriangle, Scale, ClipboardList, Video, FileBadge, CheckCircle2,
   Clock, MapPin, Ruler, BadgeCheck, BarChart3, Binary, Signal, Plus
 } from 'lucide-react';
-import { YoloDetector, ByteTracker, BoTSORT } from './yolo-tracker';
+import { YoloDetector, ByteTracker, BoTSORT, PoseDetection } from './yolo-tracker';
 
 // --- Parámetros Cinemáticos ---
 const LANE_WIDTH_METERS = 3.0;
@@ -122,6 +122,8 @@ const App = () => {
     net: 85,
     gps: '40.6483° N, 3.4582° W'
   });
+
+  const [poseEstimationEnabled, setPoseEstimationEnabled] = useState(false);
 
   // === YOLOv11 + Multi-Tracker Configuration ===
   interface YoloConfig {
@@ -1029,7 +1031,10 @@ const App = () => {
       try {
         const detector = new YoloDetector();
         // Use BASE_URL to support GitHub Pages subdirectory deployment
-        await detector.load(import.meta.env.BASE_URL + 'upload/yolo11n_640.onnx');
+        await detector.load(
+          import.meta.env.BASE_URL + 'upload/yolo11n_640.onnx',
+          import.meta.env.BASE_URL + 'upload/yolo11n-pose.onnx' // Pose model
+        );
         detectorRef.current = detector;
 
         // Initialize tracker based on preset configuration
@@ -1790,8 +1795,8 @@ const App = () => {
                 <button
                   onClick={() => setMeshGridConfig(c => ({ ...c, enabled: !c.enabled }))}
                   className={`px-3 py-1 rounded-lg border text-[9px] font-bold transition-all ${meshGridConfig.enabled
-                      ? 'bg-purple-500/30 border-purple-500/50 text-purple-300'
-                      : 'bg-slate-900/50 border-white/10 text-slate-500'
+                    ? 'bg-purple-500/30 border-purple-500/50 text-purple-300'
+                    : 'bg-slate-900/50 border-white/10 text-slate-500'
                     }`}
                 >
                   {meshGridConfig.enabled ? '✓ ON' : 'OFF'}
@@ -1805,8 +1810,8 @@ const App = () => {
                     key={type}
                     onClick={() => setMeshGridConfig(c => ({ ...c, gridType: type }))}
                     className={`p-2 rounded-lg border text-[9px] font-bold uppercase transition-all ${meshGridConfig.gridType === type
-                        ? 'bg-purple-500/30 border-purple-500/50 text-purple-300'
-                        : 'bg-slate-900/30 border-white/10 text-slate-500 hover:border-purple-500/30'
+                      ? 'bg-purple-500/30 border-purple-500/50 text-purple-300'
+                      : 'bg-slate-900/30 border-white/10 text-slate-500 hover:border-purple-500/30'
                       }`}
                   >
                     {type === 'horizontal' && '━ H'}

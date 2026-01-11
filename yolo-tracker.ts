@@ -9,6 +9,16 @@ export interface Detection {
     className: string;
 }
 
+export interface Keypoint {
+    x: number;
+    y: number;
+    confidence: number;
+}
+
+export interface PoseDetection extends Detection {
+    keypoints: Keypoint[]; // 17 keypoints (COCO format)
+}
+
 export interface Track extends Detection {
     trackId: number;
     state: number[]; // Kalman state: [cx, cy, aspect, h, vx, vy, va, vh]
@@ -434,7 +444,7 @@ export class YoloDetector {
     session: ort.InferenceSession | null = null;
     poseSession: ort.InferenceSession | null = null;
 
-    async load(modelPath: string) {
+    async load(modelPath: string, poseModelPath?: string) {
         try {
             // Configure WASM paths to ensure they are found in public/ or root
             // Use BASE_URL to support GitHub Pages subdirectory deployment
@@ -444,10 +454,140 @@ export class YoloDetector {
                 executionProviders: ['wasm'] // Start with WASM CPU for stability
             });
             console.log("YOLOv11 Loaded", this.session.outputNames, this.session.inputNames);
+
+            // Load pose model if provided
+            if (poseModelPath) {
+                this.poseSession = await ort.InferenceSession.create(poseModelPath, {
+                    executionProviders: ['wasm']
+                });
+                console.log("YOLOv11-Pose Loaded", this.poseSession.outputNames, this.poseSession.inputNames);
+            }
         } catch (e) {
             console.error("Failed to load YOLO ONNX model", e);
             throw e;
         }
+    }
+
+    async detectPose(video: HTMLVideoElement, confThreshold: number = 0.5): Promise<PoseDetection[]> {
+        if (!this.poseSession) return [];
+
+        // 1. Preprocess (same as detect)
+        const canvas = document.createElement('canvas');
+        canvas.width = 640;
+        canvas.height = 640;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return [];
+
+        ctx.drawImage(video, 0, 0, 640, 640);
+        const imgData = ctx.getImageData(0, 0, 640, 640);
+
+        const float32Data = new Float32Array(3 * 640 * 640);
+        for (let i = 0; i < 640 * 640; i++) {
+            const r = imgData.data[i * 4] / 255.0;
+            const g = imgData.data[i * 4 + 1] / 255.0;
+            const b = imgData.data[i * 4 + 2] / 255.0;
+
+            float32Data[i] = r;
+            float32Data[640 * 640 + i] = g;
+            float32Data[2 * 640 * 640 + i] = b;
+        }
+
+        const tensor = new ort.Tensor('float32', float32Data, [1, 3, 640, 640]);
+
+        // 2. Inference
+        const feeds = { images: tensor };
+        const results = await this.poseSession.run(feeds);
+
+        // 3. Postprocess Pose Output
+        // YOLO Pose output: [1, 56, 8400] or [1, 8400, 56]
+        // 56 = 4 (bbox) + 1 (conf) + 51 (17 keypoints * 3 [x,y,conf])
+        const output = results[Object.keys(results)[0]].data as Float32Array;
+        const dims = results[Object.keys(results)[0]].dims;
+
+        let numAnchors = 8400;
+        let isTransposed = false;
+
+        if (dims && dims.length === 3) {
+            if (dims[1] > dims[2]) {
+                isTransposed = true;
+                numAnchors = dims[1];
+            } else {
+                numAnchors = dims[2];
+            }
+        }
+
+        const predictions: PoseDetection[] = [];
+        const scaleX = video.videoWidth / 640;
+        const scaleY = video.videoHeight / 640;
+
+        for (let i = 0; i < numAnchors; i++) {
+            let cx, cy, w, h, score;
+
+            if (isTransposed) {
+                // [1, 8400, 56]
+                const row = i * 56;
+                cx = output[row + 0];
+                cy = output[row + 1];
+                w = output[row + 2];
+                h = output[row + 3];
+                score = output[row + 4];
+            } else {
+                // [1, 56, 8400]
+                cx = output[0 * numAnchors + i];
+                cy = output[1 * numAnchors + i];
+                w = output[2 * numAnchors + i];
+                h = output[3 * numAnchors + i];
+                score = output[4 * numAnchors + i];
+            }
+
+            if (score > confThreshold) {
+                // Extract 17 keypoints
+                const keypoints: Keypoint[] = [];
+                for (let k = 0; k < 17; k++) {
+                    let kx, ky, kconf;
+                    if (isTransposed) {
+                        const row = i * 56;
+                        kx = output[row + 5 + k * 3];
+                        ky = output[row + 5 + k * 3 + 1];
+                        kconf = output[row + 5 + k * 3 + 2];
+                    } else {
+                        kx = output[(5 + k * 3) * numAnchors + i];
+                        ky = output[(5 + k * 3 + 1) * numAnchors + i];
+                        kconf = output[(5 + k * 3 + 2) * numAnchors + i];
+                    }
+
+                    keypoints.push({
+                        x: kx * scaleX,
+                        y: ky * scaleY,
+                        confidence: kconf
+                    });
+                }
+
+                predictions.push({
+                    bbox: [(cx - w / 2) * scaleX, (cy - h / 2) * scaleY, w * scaleX, h * scaleY],
+                    score,
+                    classId: 0, // Person
+                    className: 'person',
+                    keypoints
+                });
+            }
+        }
+
+        return this.nmsPose(predictions);
+    }
+
+    nmsPose(detections: PoseDetection[], iouThresh = 0.45): PoseDetection[] {
+        detections.sort((a, b) => b.score - a.score);
+        const selected: PoseDetection[] = [];
+
+        while (detections.length > 0) {
+            const current = detections.shift()!;
+            selected.push(current);
+
+            detections = detections.filter(d => iou(current.bbox, d.bbox) < iouThresh);
+        }
+
+        return selected;
     }
 
     async detect(video: HTMLVideoElement, confThreshold: number = 0.4): Promise<Detection[]> {
