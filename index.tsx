@@ -979,7 +979,7 @@ const App = () => {
     // For this implementation, we will ONLY update tracks when inference runs.
 
     let activeTracks: any[] = [];
-    if (runInference) {
+    if (runInference && detectorRef.current) {
       activeTracks = trackerRef.current.update(detections);
 
       // Sync visual tracks with tracker output

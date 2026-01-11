@@ -269,10 +269,13 @@ export class YoloDetector {
 
     async load(modelPath: string) {
         try {
+            // Configure WASM paths to ensure they are found in public/ or root
+            ort.env.wasm.wasmPaths = "/";
+
             this.session = await ort.InferenceSession.create(modelPath, {
-                executionProviders: ['wasm', 'webgl']
+                executionProviders: ['wasm'] // Start with WASM CPU for stability
             });
-            console.log("YOLOv11 Loaded via ONNX Runtime");
+            console.log("YOLOv11 Loaded", this.session.outputNames, this.session.inputNames);
         } catch (e) {
             console.error("Failed to load YOLO ONNX model", e);
             throw e;
@@ -313,53 +316,72 @@ export class YoloDetector {
 
         // 3. Postprocess
         const output = results[Object.keys(results)[0]].data as Float32Array;
-        // Shape [1, 84, 8400]
-        // Stride is 8400 usually for cols? No, usually [1, cy, cx]
+        const dims = results[Object.keys(results)[0]].dims;
+
+        let numAnchors = 8400;
+        let numClasses = 80;
+        let isTransposed = false;
+
+        if (dims && dims.length === 3) {
+            if (dims[1] > dims[2]) {
+                isTransposed = true;
+                numAnchors = dims[1];
+                numClasses = dims[2] - 4;
+            } else {
+                isTransposed = false;
+                numAnchors = dims[2];
+                numClasses = dims[1] - 4;
+            }
+        }
         // YOLOv8 output: [1, 84, 8400] -> (cx, cy, w, h, 80_classes) x 8400_anchors
 
         // NOTE: ONNX Runtime output is flat Float32Array
         // We need to iterate carefully
 
         const predictions: Detection[] = [];
-        const numAnchors = 8400;
-        const numClasses = 80;
-        const dims = 4 + numClasses; // 84
 
         for (let i = 0; i < numAnchors; i++) {
-            // Find max class score
             let maxScore = 0;
             let maxClass = 0;
 
-            // The storage is typically [dim, anchor] or [anchor, dim]?
-            // YOLO export default is [1, 84, 8400] -> dim is fast index or anchor fast index?
-            // Usually [batch, channel, anchor]
-            // Access: data[channel * numAnchors + anchor]
-
+            // Find class with max score
             for (let c = 0; c < numClasses; c++) {
-                const score = output[(4 + c) * numAnchors + i];
+                let score = 0;
+                if (isTransposed) {
+                    // [1, 8400, 84] -> data[i * 84 + (4 + c)]
+                    score = output[i * (numClasses + 4) + (4 + c)];
+                } else {
+                    // [1, 84, 8400] -> data[(4 + c) * 8400 + i]
+                    score = output[(4 + c) * numAnchors + i];
+                }
+
                 if (score > maxScore) {
                     maxScore = score;
                     maxClass = c;
                 }
             }
 
-            if (maxScore > confThreshold) { // Conf Threshold
-                const cx = output[0 * numAnchors + i];
-                const cy = output[1 * numAnchors + i];
-                const w = output[2 * numAnchors + i];
-                const h = output[3 * numAnchors + i];
+            if (maxScore > confThreshold) {
+                let cx, cy, w, h;
+                if (isTransposed) {
+                    const row = i * (numClasses + 4);
+                    cx = output[row + 0];
+                    cy = output[row + 1];
+                    w = output[row + 2];
+                    h = output[row + 3];
+                } else {
+                    cx = output[0 * numAnchors + i];
+                    cy = output[1 * numAnchors + i];
+                    w = output[2 * numAnchors + i];
+                    h = output[3 * numAnchors + i];
+                }
 
-                // Scale back to video size
+                // Scale to video size
                 const scaleX = video.videoWidth / 640;
                 const scaleY = video.videoHeight / 640;
 
-                const finalX = (cx - w / 2) * scaleX;
-                const finalY = (cy - h / 2) * scaleY;
-                const finalW = w * scaleX;
-                const finalH = h * scaleY;
-
                 predictions.push({
-                    bbox: [finalX, finalY, finalW, finalH],
+                    bbox: [(cx - w / 2) * scaleX, (cy - h / 2) * scaleY, w * scaleX, h * scaleY],
                     score: maxScore,
                     classId: maxClass,
                     className: COCO_CLASSES[maxClass] || 'unknown'
