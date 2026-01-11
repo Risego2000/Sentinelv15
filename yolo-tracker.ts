@@ -151,10 +151,10 @@ export class ByteTracker {
     tracks: KalmanBoxTracker[] = [];
     frameId = 0;
 
-    // Params
+    // Configurable parameters
     highThresh = 0.5;
-    matchThresh = 0.8; // IoU threshold? Actually cost. ByteTrack uses high IoU. 
-    // ByteTrack: high conf -> match first. low conf -> match second.
+    matchThresh = 0.25;
+    trackBufferFrames = 30; // Frames to keep lost tracks
 
     update(detections: Detection[]): Track[] {
         this.frameId++;
@@ -166,16 +166,12 @@ export class ByteTracker {
         // 2. Predict tracks
         this.tracks.forEach(t => t.predict());
 
-        const unconfirmed = this.tracks.filter(t => !t.hits); // tracks not hit yet? 
-        // ByteTrack State: Tracked vs Lost vs New. 
-        // Simplified: Just use list of active tracks.
-
         // 3. Match High Conf
         const trackIndices = Array.from(this.tracks.keys());
         const highDetIndices = Array.from(highDets.keys());
 
         const { matches: matches1, unmatchedTracks: uTracks1, unmatchedDets: uDets1 }
-            = this.match(this.tracks, highDets, trackIndices, highDetIndices, 0.2); // 0.2 IoU thresh
+            = this.match(this.tracks, highDets, trackIndices, highDetIndices, this.matchThresh);
 
         // Update matched tracks
         matches1.forEach((m) => {
@@ -184,7 +180,7 @@ export class ByteTracker {
 
         // 4. Match Low Conf with Unmatched Tracks (uTracks1)
         const { matches: matches2, unmatchedTracks: uTracks2, unmatchedDets: uDets2 }
-            = this.match(this.tracks, lowDets, uTracks1, Array.from(lowDets.keys()), 0.5);
+            = this.match(this.tracks, lowDets, uTracks1, Array.from(lowDets.keys()), this.matchThresh);
 
         // Update matched low-conf tracks
         matches2.forEach((m) => {
@@ -197,9 +193,8 @@ export class ByteTracker {
             this.tracks.push(new KalmanBoxTracker(d.bbox));
         });
 
-        // 6. Remove lost tracks
-        // Remove if timeSinceUpdate > threshold (e.g., 30 frames)
-        this.tracks = this.tracks.filter(t => t.timeSinceUpdate < 30);
+        // 6. Remove lost tracks using configurable buffer
+        this.tracks = this.tracks.filter(t => t.timeSinceUpdate < this.trackBufferFrames);
 
         // Return tracks for display
         // Only return established tracks? or all?

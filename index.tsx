@@ -123,11 +123,56 @@ const App = () => {
     gps: '40.6483° N, 3.4582° W'
   });
 
-  const [inferParams, setInferParams] = useState({
-    confThreshold: 0.35,
-    detectionSkip: 4,
-    persistence: 45
-  });
+  // === YOLOv11 + ByteTrack Configuration ===
+  interface YoloConfig {
+    // YOLO Detection
+    confThreshold: number;      // Min confidence (0-1)
+    nmsIouThreshold: number;    // NMS IoU threshold
+    detectionSkip: number;      // Process every N frames
+
+    // ByteTrack Parameters
+    highDetThreshold: number;   // High confidence threshold for first matching
+    lowDetThreshold: number;    // Low confidence threshold for second matching  
+    matchIouThreshold: number;  // IoU threshold for track matching
+    trackBufferFrames: number;  // Frames to keep lost tracks
+    minHitsToConfirm: number;   // Min detections to confirm new track
+  }
+
+  const trackingPresets: Record<string, YoloConfig> = {
+    'highway-fast': {
+      confThreshold: 0.4,
+      nmsIouThreshold: 0.45,
+      detectionSkip: 2,
+      highDetThreshold: 0.6,
+      lowDetThreshold: 0.2,
+      matchIouThreshold: 0.3,
+      trackBufferFrames: 20,
+      minHitsToConfirm: 3
+    },
+    'urban-balanced': {
+      confThreshold: 0.35,
+      nmsIouThreshold: 0.5,
+      detectionSkip: 3,
+      highDetThreshold: 0.5,
+      lowDetThreshold: 0.15,
+      matchIouThreshold: 0.25,
+      trackBufferFrames: 30,
+      minHitsToConfirm: 2
+    },
+    'precision-slow': {
+      confThreshold: 0.3,
+      nmsIouThreshold: 0.55,
+      detectionSkip: 1,
+      highDetThreshold: 0.45,
+      lowDetThreshold: 0.1,
+      matchIouThreshold: 0.2,
+      trackBufferFrames: 45,
+      minHitsToConfirm: 1
+    }
+  };
+
+  const [activePreset, setActivePreset] = useState<string>('urban-balanced');
+  const [yoloConfig, setYoloConfig] = useState<YoloConfig>(trackingPresets['urban-balanced']);
 
   const frameCounterRef = useRef(0);
 
@@ -959,24 +1004,19 @@ const App = () => {
     frameCounterRef.current++;
 
     // --- YOLOv11 & ByteTrack Pipeline ---
-    let detections: any[] = []; // Use any to match Yolo interface or explicit type
-    // Only run expensive inference on skip frames
-    const runInference = frameCounterRef.current % inferParams.detectionSkip === 0;
+    let detections: any[] = [];
+    const runInference = frameCounterRef.current % yoloConfig.detectionSkip === 0;
 
     if (runInference) {
-      detections = await detectorRef.current.detect(v, inferParams.confThreshold);
+      detections = await detectorRef.current.detect(v, yoloConfig.confThreshold);
     }
 
-    // Run Tracker (Always run to keep Kalman filters updating)
-    // If no inference, we pass empty detections?
-    // NOTE: Passing empty detections on skip frames counts as 'missed' for tracker. 
-    // Given the short skip (4 frames), this is acceptable as persistence is >30.
-    // Ideally we would separate Predict/Update, but for now this works.
-
-    // IMPORTANT: Only update tracker with NEW detections. 
-    // If we skip inference, we SHOULD NOT call update([]) as it will treat it as "object gone".
-    // We should only call tracker.update when we have fresh data, OR we need a tracker.predict() method.
-    // For this implementation, we will ONLY update tracks when inference runs.
+    // Update tracker configuration dynamically
+    if (trackerRef.current) {
+      trackerRef.current.highThresh = yoloConfig.highDetThreshold;
+      trackerRef.current.matchThresh = yoloConfig.matchIouThreshold;
+      trackerRef.current.trackBufferFrames = yoloConfig.trackBufferFrames;
+    }
 
     let activeTracks: any[] = [];
     if (runInference && detectorRef.current) {
@@ -990,8 +1030,16 @@ const App = () => {
         matchedIds.add(t.trackId);
         let vt = tracksRef.current.find(existing => existing.id === t.trackId);
 
-        const cx = t.bbox[0] + t.bbox[2] / 2;
-        const cy = t.bbox[1] + t.bbox[3] / 2;
+        // === CRITICAL FIX: Convert pixel coordinates to normalized 0-1000 space ===
+        // YOLO bbox is in video pixel coordinates
+        // UI rendering expects normalized 0-1000 coordinates
+        const videoW = v.videoWidth || 1280;
+        const videoH = v.videoHeight || 720;
+
+        const cx_normalized = (t.bbox[0] + t.bbox[2] / 2) / videoW * 1000;
+        const cy_normalized = (t.bbox[1] + t.bbox[3] / 2) / videoH * 1000;
+        const w_normalized = (t.bbox[2] / videoW) * 1000;
+        const h_normalized = (t.bbox[3] / videoH) * 1000;
 
         if (!vt) {
           // New Visual Track
@@ -1007,24 +1055,32 @@ const App = () => {
             age: t.age,
             analyzed: false,
             vx: 0, vy: 0,
-            predictedX: cx, predictedY: cy,
+            predictedX: cx_normalized,
+            predictedY: cy_normalized,
             confidence: t.score,
             missedFrames: 0,
-            w: t.bbox[2], h: t.bbox[3],
+            w: w_normalized,
+            h: h_normalized,
             isInfractor: false
           };
         }
 
-        // Update State
+        // Update State with normalized coordinates
         vt.lastSeen = now;
-        vt.points.push({ x: cx, y: cy, time: now });
-        // Kalman Velocity (pixels/frame? No, depends on tracker implementation. 
-        // My tracker uses simple state. Velocity is in state[4], state[5])
-        // Let's rely on points diff for now to match UI expectations or use state.
-        vt.w = t.bbox[2];
-        vt.h = t.bbox[3];
+        vt.points.push({ x: cx_normalized, y: cy_normalized, time: now });
+        vt.w = w_normalized;
+        vt.h = h_normalized;
         vt.confidence = t.score;
         vt.age = t.age;
+
+        // Calculate velocity from track history
+        if (vt.points.length > 1) {
+          const p1 = vt.points[vt.points.length - 1];
+          const p2 = vt.points[vt.points.length - 2];
+          vt.vx = p1.x - p2.x;
+          vt.vy = p1.y - p2.y;
+          vt.velocity = Math.sqrt(vt.vx * vt.vx + vt.vy * vt.vy);
+        }
 
         // History clamp
         if (vt.points.length > 50) vt.points.shift();
@@ -1032,20 +1088,14 @@ const App = () => {
         newVisualTracks.push(vt);
       });
 
-      // Handle lost tracks (fade out effect could be added here, but simplest is to sync strictly)
-      // But to avoid flicker, maybe keep tracks that were just lost?
-      // The tracker handles persistence. If it's not in activeTracks, it's GONE (timed out).
       tracksRef.current = newVisualTracks;
     } else {
-      // Interpolation for smooth UI (Predict phase only)
-      // Since we didn't run tracker, we linearly predict visual tracks
+      // Smooth interpolation on skipped frames using Kalman-predicted velocity
       tracksRef.current.forEach(t => {
-        if (t.points.length > 1) {
-          const p1 = t.points[t.points.length - 1];
-          const p2 = t.points[t.points.length - 2];
-          const vx = p1.x - p2.x;
-          const vy = p1.y - p2.y;
-          t.points.push({ x: p1.x + vx, y: p1.y + vy, time: now });
+        if (t.points.length > 0) {
+          const lastP = t.points[t.points.length - 1];
+          // Use velocity from last update
+          t.points.push({ x: lastP.x + t.vx, y: lastP.y + t.vy, time: now });
           if (t.points.length > 50) t.points.shift();
         }
       });
@@ -1291,47 +1341,118 @@ const App = () => {
         </div>
 
         <div className="flex-1 p-6 space-y-8">
-          {/* Inference Engine Tuning Section - MOVED TO TOP */}
+          {/* === YOLOv11 + ByteTrack Configuration === */}
           <div className="space-y-3">
             <h3 className="text-[11px] font-black uppercase text-slate-600 tracking-widest flex items-center gap-2 px-2">
-              <Settings size={12} className="text-amber-500" /> MOTOR DE INFERENCIA (LOCAL)
+              <Cpu size={12} className="text-cyan-500" /> YOLO11 + ByteTrack Engine
             </h3>
+
+            {/* Preset Selector */}
+            <div className="bg-gradient-to-br from-cyan-500/10 to-purple-500/10 border border-cyan-500/20 rounded-2xl p-4 space-y-3">
+              <div className="flex items-center gap-2 mb-2">
+                <Zap size={12} className="text-amber-500" />
+                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Presets de Tracking</span>
+              </div>
+              <div className="grid grid-cols-1 gap-2">
+                {Object.keys(trackingPresets).map(preset => (
+                  <button
+                    key={preset}
+                    onClick={() => {
+                      setActivePreset(preset);
+                      setYoloConfig(trackingPresets[preset]);
+                    }}
+                    className={`p-3 rounded-xl border transition-all ${activePreset === preset
+                        ? 'bg-cyan-500/20 border-cyan-500/50 text-cyan-400'
+                        : 'bg-slate-900/50 border-white/5 text-slate-400 hover:border-cyan-500/30'
+                      }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-bold uppercase tracking-tight">
+                        {preset === 'highway-fast' && '🏎️ Autopista (Rápido)'}
+                        {preset === 'urban-balanced' && '🏙️ Urbano (Equilibrado)'}
+                        {preset === 'precision-slow' && '🎯 Precisión (Lento)'}
+                      </span>
+                      {activePreset === preset && <Check size={14} />}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Advanced YOLO Parameters */}
             <div className="bg-slate-900/40 rounded-2xl p-4 space-y-4">
               <div className="space-y-1">
                 <div className="flex justify-between text-[9px] font-bold text-slate-500 uppercase">
-                  <span>Umbral Confianza</span>
-                  <span className="text-cyan-400">{inferParams.confThreshold.toFixed(2)}</span>
+                  <span>🎯 YOLO Conf. Threshold</span>
+                  <span className="text-cyan-400">{yoloConfig.confThreshold.toFixed(2)}</span>
                 </div>
                 <input
                   type="range" min="0.1" max="0.9" step="0.05"
-                  value={inferParams.confThreshold}
-                  onChange={(e) => setInferParams(p => ({ ...p, confThreshold: parseFloat(e.target.value) }))}
+                  value={yoloConfig.confThreshold}
+                  onChange={(e) => setYoloConfig(c => ({ ...c, confThreshold: parseFloat(e.target.value) }))}
                   className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-cyan-500"
                 />
               </div>
+
               <div className="space-y-1">
                 <div className="flex justify-between text-[9px] font-bold text-slate-500 uppercase">
-                  <span>Frame Skip (Inferencia)</span>
-                  <span className="text-cyan-400">{inferParams.detectionSkip} F</span>
+                  <span>⚡ Frame Skip</span>
+                  <span className="text-cyan-400">{yoloConfig.detectionSkip} frames</span>
                 </div>
                 <input
                   type="range" min="1" max="10" step="1"
-                  value={inferParams.detectionSkip}
-                  onChange={(e) => setInferParams(p => ({ ...p, detectionSkip: parseInt(e.target.value) }))}
-                  className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-cyan-500"
+                  value={yoloConfig.detectionSkip}
+                  onChange={(e) => setYoloConfig(c => ({ ...c, detectionSkip: parseInt(e.target.value) }))}
+                  className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-amber-500"
                 />
               </div>
+
               <div className="space-y-1">
                 <div className="flex justify-between text-[9px] font-bold text-slate-500 uppercase">
-                  <span>Persistencia de Track</span>
-                  <span className="text-cyan-400">{inferParams.persistence} F</span>
+                  <span>🧲 High Det. Threshold</span>
+                  <span className="text-purple-400">{yoloConfig.highDetThreshold.toFixed(2)}</span>
                 </div>
                 <input
-                  type="range" min="5" max="100" step="5"
-                  value={inferParams.persistence}
-                  onChange={(e) => setInferParams(p => ({ ...p, persistence: parseInt(e.target.value) }))}
-                  className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-cyan-500"
+                  type="range" min="0.3" max="0.9" step="0.05"
+                  value={yoloConfig.highDetThreshold}
+                  onChange={(e) => setYoloConfig(c => ({ ...c, highDetThreshold: parseFloat(e.target.value) }))}
+                  className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-purple-500"
                 />
+              </div>
+
+              <div className="space-y-1">
+                <div className="flex justify-between text-[9px] font-bold text-slate-500 uppercase">
+                  <span>🔄 Track Buffer</span>
+                  <span className="text-green-400">{yoloConfig.trackBufferFrames} frames</span>
+                </div>
+                <input
+                  type="range" min="10" max="60" step="5"
+                  value={yoloConfig.trackBufferFrames}
+                  onChange={(e) => setYoloConfig(c => ({ ...c, trackBufferFrames: parseInt(e.target.value) }))}
+                  className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-green-500"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <div className="flex justify-between text-[9px] font-bold text-slate-500 uppercase">
+                  <span>🎲 Match IoU Threshold</span>
+                  <span className="text-pink-400">{yoloConfig.matchIouThreshold.toFixed(2)}</span>
+                </div>
+                <input
+                  type="range" min="0.1" max="0.7" step="0.05"
+                  value={yoloConfig.matchIouThreshold}
+                  onChange={(e) => setYoloConfig(c => ({ ...c, matchIouThreshold: parseFloat(e.target.value) }))}
+                  className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-pink-500"
+                />
+              </div>
+
+              {/* Info Card */}
+              <div className="mt-4 p-3 bg-slate-950/50 border border-white/5 rounded-xl">
+                <div className="text-[8px] font-mono text-slate-500 space-y-1">
+                  <div>Model: <span className="text-cyan-400">YOLOv11-Nano (ONNX/WASM)</span></div>
+                  <div>Tracker: <span className="text-purple-400">ByteTrack + Kalman Filter</span></div>
+                  <div>Backend: <span className="text-green-400">WebAssembly SIMD</span></div>
+                </div>
               </div>
             </div>
           </div>

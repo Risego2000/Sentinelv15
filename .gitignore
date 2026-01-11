@@ -29,3 +29,8 @@ public/upload/*.mp4
 public/upload/*.gif
 public/upload/*.webm
 
+# Root upload folder
+upload/*.mp4
+upload/*.gif
+upload/*.webm
+
