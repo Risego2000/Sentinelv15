@@ -270,7 +270,8 @@ export class YoloDetector {
     async load(modelPath: string) {
         try {
             // Configure WASM paths to ensure they are found in public/ or root
-            ort.env.wasm.wasmPaths = "/";
+            // Use BASE_URL to support GitHub Pages subdirectory deployment
+            ort.env.wasm.wasmPaths = import.meta.env.BASE_URL;
 
             this.session = await ort.InferenceSession.create(modelPath, {
                 executionProviders: ['wasm'] // Start with WASM CPU for stability
