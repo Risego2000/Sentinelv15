@@ -16,6 +16,7 @@ export interface Track extends Detection {
     age: number;
     hits: number;    // frames tracked
     timeSinceUpdate: number;
+    appearance?: number[]; // BoT-SORT: appearance feature vector
 }
 
 // --- Constants ---
@@ -40,12 +41,13 @@ class KalmanBoxTracker {
     age = 0;
     hits = 0;
     timeSinceUpdate = 0;
+    appearance?: number[]; // BoT-SORT: Color histogram as appearance feature
 
     // Standard Kalman params
     private static readonly R_STD = [10, 10, 10, 10]; // Measurement noise
     private static readonly Q_STD = [0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01]; // Process noise (low for constant velocity)
 
-    constructor(bbox: [number, number, number, number]) {
+    constructor(bbox: [number, number, number, number], appearance?: number[]) {
         this.trackId = KalmanBoxTracker.count++;
 
         // Initial State: x, y, s, h, 0, 0, 0, 0
@@ -55,6 +57,7 @@ class KalmanBoxTracker {
         const s = bbox[2] * bbox[3]; // Area
         const h = bbox[3];
         this.state = [cx, cy, s, h, 0, 0, 0, 0];
+        this.appearance = appearance;
 
         // Initial Covariance
         this.P = this.createIdentity(8, 10); // Check 10 or 1
@@ -88,7 +91,7 @@ class KalmanBoxTracker {
     }
 
     // Update
-    update(bbox: [number, number, number, number]) {
+    update(bbox: [number, number, number, number], appearance?: number[]) {
         this.timeSinceUpdate = 0;
         this.hits++;
 
@@ -106,8 +109,13 @@ class KalmanBoxTracker {
         this.state[2] = this.state[2] * (1 - alpha) + s * alpha;
         this.state[3] = this.state[3] * (1 - alpha) + h * alpha;
 
-        // Reset velocity noise or update? 
-        // Usually velocity is inferred. For now, we trust the filter self-corrects via predict step.
+        // Update appearance with smooth blending (BoT-SORT)
+        if (appearance && this.appearance) {
+            const beta = 0.9; // High momentum for appearance
+            this.appearance = this.appearance.map((v, i) => v * beta + appearance[i] * (1 - beta));
+        } else if (appearance) {
+            this.appearance = appearance;
+        }
     }
 
     getBBox(): [number, number, number, number] {
@@ -144,6 +152,20 @@ function iou(boxA: [number, number, number, number], boxB: [number, number, numb
     const boxBArea = boxB[2] * boxB[3];
 
     return interArea / (boxAArea + boxBArea - interArea);
+}
+
+// --- Cosine Similarity for Appearance Matching (BoT-SORT) ---
+function cosineSimilarity(a: number[], b: number[]): number {
+    if (!a || !b || a.length !== b.length) return 0;
+    let dotProduct = 0;
+    let normA = 0;
+    let normB = 0;
+    for (let i = 0; i < a.length; i++) {
+        dotProduct += a[i] * b[i];
+        normA += a[i] * a[i];
+        normB += b[i] * b[i];
+    }
+    return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB) + 1e-8);
 }
 
 // --- ByteTrack Core ---
@@ -197,16 +219,14 @@ export class ByteTracker {
         this.tracks = this.tracks.filter(t => t.timeSinceUpdate < this.trackBufferFrames);
 
         // Return tracks for display
-        // Only return established tracks? or all?
-        // Usually return tracks with hits > min_hits or age > min_age
         return this.tracks.map(t => {
             const [x, y, w, h] = t.getBBox();
             return {
                 trackId: t.trackId,
                 bbox: [x, y, w, h],
-                score: 1.0, // Tracker confidence
-                classId: 0, // Should preserve class from detection
-                className: 'vehicle', // Need to store class in KalmanTracker? Yes.
+                score: 1.0,
+                classId: 0,
+                className: 'vehicle',
                 state: t.state,
                 covariance: t.P,
                 age: t.age,
@@ -222,12 +242,6 @@ export class ByteTracker {
         const unmatchedTracks = new Set(trackIndices);
         const unmatchedDets = new Set(detIndices);
 
-        // Helper: calculate matrix
-        // Greedy approach:
-        // 1. Calc all IoUs
-        // 2. Sort by IoU desc
-        // 3. Pick best match, remove row/col, repeat
-
         const candidates: { tIdx: number, dIdx: number, iou: number }[] = [];
 
         trackIndices.forEach(tIdx => {
@@ -240,6 +254,164 @@ export class ByteTracker {
         });
 
         candidates.sort((a, b) => b.iou - a.iou);
+
+        candidates.forEach(c => {
+            if (unmatchedTracks.has(c.tIdx) && unmatchedDets.has(c.dIdx)) {
+                matches.push([c.tIdx, c.dIdx]);
+                unmatchedTracks.delete(c.tIdx);
+                unmatchedDets.delete(c.dIdx);
+            }
+        });
+
+        return {
+            matches,
+            unmatchedTracks: Array.from(unmatchedTracks),
+            unmatchedDets: Array.from(unmatchedDets)
+        };
+    }
+}
+
+// === BoT-SORT Implementation ===
+export class BoTSORT {
+    tracks: KalmanBoxTracker[] = [];
+    frameId = 0;
+
+    // Configurable parameters
+    highThresh = 0.6;
+    matchThresh = 0.25;
+    trackBufferFrames = 40; // Longer buffer for re-identification
+    appearanceWeight = 0.5; // Balance between IoU and appearance
+
+    // Extract simple color histogram as appearance feature
+    extractAppearance(imageData: ImageData, bbox: [number, number, number, number]): number[] {
+        const [x, y, w, h] = bbox.map(v => Math.floor(v));
+        const histogram = new Array(16).fill(0); // 16-bin RGB histogram (simplified)
+
+        let count = 0;
+        for (let py = Math.max(0, y); py < Math.min(imageData.height, y + h); py++) {
+            for (let px = Math.max(0, x); px < Math.min(imageData.width, x + w); px++) {
+                const idx = (py * imageData.width + px) * 4;
+                const r = Math.floor(imageData.data[idx] / 64); // 0-3
+                const g = Math.floor(imageData.data[idx + 1] / 64);
+                const b = Math.floor(imageData.data[idx + 2] / 64);
+                const binIdx = r * 4 + g; // Simple 16-bin histogram
+                histogram[binIdx]++;
+                count++;
+            }
+        }
+
+        // Normalize
+        return histogram.map(v => v / (count + 1e-8));
+    }
+
+    update(detections: Detection[], videoFrame?: HTMLVideoElement): Track[] {
+        this.frameId++;
+
+        // Extract appearance features if video frame provided
+        let appearances: (number[] | undefined)[] = [];
+        if (videoFrame) {
+            const canvas = document.createElement('canvas');
+            canvas.width = videoFrame.videoWidth;
+            canvas.height = videoFrame.videoHeight;
+            const ctx = canvas.getContext('2d');
+            if (ctx) {
+                ctx.drawImage(videoFrame, 0, 0);
+                const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                appearances = detections.map(d => this.extractAppearance(imageData, d.bbox));
+            }
+        }
+
+        // 1. Divide detections
+        const highDets = detections.filter(d => d.score >= this.highThresh);
+        const lowDets = detections.filter(d => d.score < this.highThresh && d.score > 0.1);
+        const highApps = appearances.slice(0, highDets.length);
+        const lowApps = appearances.slice(highDets.length);
+
+        // 2. Predict tracks
+        this.tracks.forEach(t => t.predict());
+
+        // 3. Match High Conf with Appearance
+        const trackIndices = Array.from(this.tracks.keys());
+        const highDetIndices = Array.from(highDets.keys());
+
+        const { matches: matches1, unmatchedTracks: uTracks1, unmatchedDets: uDets1 }
+            = this.matchWithAppearance(this.tracks, highDets, trackIndices, highDetIndices, this.matchThresh, highApps);
+
+        // Update matched tracks
+        matches1.forEach((m) => {
+            this.tracks[m[0]].update(highDets[m[1]].bbox, highApps[m[1]]);
+        });
+
+        // 4. Re-ID: Try to match unmatched tracks with low detections (lost objects recovery)
+        const { matches: matches2, unmatchedTracks: uTracks2, unmatchedDets: uDets2 }
+            = this.matchWithAppearance(this.tracks, lowDets, uTracks1, Array.from(lowDets.keys()), this.matchThresh * 0.7, lowApps);
+
+        // Update re-identified tracks
+        matches2.forEach((m) => {
+            this.tracks[m[0]].update(lowDets[m[1]].bbox, lowApps[m[1]]);
+        });
+
+        // 5. Create new tracks from Unmatched High Conf Dets
+        uDets1.forEach(idx => {
+            const d = highDets[idx];
+            this.tracks.push(new KalmanBoxTracker(d.bbox, highApps[idx]));
+        });
+
+        // 6. Remove lost tracks
+        this.tracks = this.tracks.filter(t => t.timeSinceUpdate < this.trackBufferFrames);
+
+        // Return tracks
+        return this.tracks.map(t => {
+            const [x, y, w, h] = t.getBBox();
+            return {
+                trackId: t.trackId,
+                bbox: [x, y, w, h],
+                score: 1.0,
+                classId: 0,
+                className: 'vehicle',
+                state: t.state,
+                covariance: t.P,
+                age: t.age,
+                hits: t.hits,
+                timeSinceUpdate: t.timeSinceUpdate,
+                appearance: t.appearance
+            } as Track;
+        });
+    }
+
+    // Match with combined IoU + Appearance similarity
+    private matchWithAppearance(
+        tracks: KalmanBoxTracker[],
+        dets: Detection[],
+        trackIndices: number[],
+        detIndices: number[],
+        iouThresh: number,
+        appearances: (number[] | undefined)[]
+    ) {
+        const matches: [number, number][] = [];
+        const unmatchedTracks = new Set(trackIndices);
+        const unmatchedDets = new Set(detIndices);
+
+        const candidates: { tIdx: number, dIdx: number, score: number }[] = [];
+
+        trackIndices.forEach(tIdx => {
+            detIndices.forEach(dIdx => {
+                const iouScore = iou(tracks[tIdx].getBBox(), dets[dIdx].bbox);
+
+                // Combine IoU with appearance if available
+                let finalScore = iouScore;
+                if (tracks[tIdx].appearance && appearances[dIdx]) {
+                    const appSim = cosineSimilarity(tracks[tIdx].appearance!, appearances[dIdx]!);
+                    finalScore = (1 - this.appearanceWeight) * iouScore + this.appearanceWeight * appSim;
+                }
+
+                if (finalScore >= iouThresh) {
+                    candidates.push({ tIdx, dIdx, score: finalScore });
+                }
+            });
+        });
+
+        candidates.sort((a, b) => b.score - a.score);
 
         candidates.forEach(c => {
             if (unmatchedTracks.has(c.tIdx) && unmatchedDets.has(c.dIdx)) {
@@ -318,6 +490,10 @@ export class YoloDetector {
         let numClasses = 80;
         let isTransposed = false;
 
+        // Auto-detect shape
+        // [1, 84, 8400] -> Default
+        // [1, 8400, 84] -> Transposed
+        // We assume dim with >1000 is anchors
         if (dims && dims.length === 3) {
             if (dims[1] > dims[2]) {
                 isTransposed = true;
@@ -329,10 +505,9 @@ export class YoloDetector {
                 numClasses = dims[1] - 4;
             }
         }
-        // YOLOv8 output: [1, 84, 8400] -> (cx, cy, w, h, 80_classes) x 8400_anchors
 
-        // NOTE: ONNX Runtime output is flat Float32Array
-        // We need to iterate carefully
+        // Debug
+        // console.log("YOLO Shape:", dims, "Transposed:", isTransposed);
 
         const predictions: Detection[] = [];
 
@@ -388,6 +563,7 @@ export class YoloDetector {
         return this.nms(predictions);
     }
 
+    // Helper NMS
     nms(detections: Detection[], iouThresh = 0.45): Detection[] {
         detections.sort((a, b) => b.score - a.score);
         const selected: Detection[] = [];

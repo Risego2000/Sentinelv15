@@ -14,7 +14,7 @@ import {
   AlertTriangle, Scale, ClipboardList, Video, FileBadge, CheckCircle2,
   Clock, MapPin, Ruler, BadgeCheck, BarChart3, Binary, Signal, Plus
 } from 'lucide-react';
-import { YoloDetector, ByteTracker } from './yolo-tracker';
+import { YoloDetector, ByteTracker, BoTSORT } from './yolo-tracker';
 
 // --- Parámetros Cinemáticos ---
 const LANE_WIDTH_METERS = 3.0;
@@ -123,56 +123,80 @@ const App = () => {
     gps: '40.6483° N, 3.4582° W'
   });
 
-  // === YOLOv11 + ByteTrack Configuration ===
+  // === YOLOv11 + Multi-Tracker Configuration ===
   interface YoloConfig {
     // YOLO Detection
     confThreshold: number;      // Min confidence (0-1)
     nmsIouThreshold: number;    // NMS IoU threshold
     detectionSkip: number;      // Process every N frames
 
-    // ByteTrack Parameters
+    // Tracker Selection
+    trackerType: 'ByteTrack' | 'BoT-SORT';
+
+    // ByteTrack / BoT-SORT Parameters
     highDetThreshold: number;   // High confidence threshold for first matching
     lowDetThreshold: number;    // Low confidence threshold for second matching  
     matchIouThreshold: number;  // IoU threshold for track matching
     trackBufferFrames: number;  // Frames to keep lost tracks
     minHitsToConfirm: number;   // Min detections to confirm new track
+
+    // BoT-SORT Specific
+    appearanceWeight: number;   // Weight for appearance matching (0-1)
   }
 
   const trackingPresets: Record<string, YoloConfig> = {
-    'highway-fast': {
+    'highway-fast-bytetrack': {
       confThreshold: 0.4,
       nmsIouThreshold: 0.45,
       detectionSkip: 2,
+      trackerType: 'ByteTrack',
       highDetThreshold: 0.6,
       lowDetThreshold: 0.2,
       matchIouThreshold: 0.3,
       trackBufferFrames: 20,
-      minHitsToConfirm: 3
+      minHitsToConfirm: 3,
+      appearanceWeight: 0.0
     },
-    'urban-balanced': {
+    'urban-balanced-bytetrack': {
       confThreshold: 0.35,
       nmsIouThreshold: 0.5,
       detectionSkip: 3,
+      trackerType: 'ByteTrack',
       highDetThreshold: 0.5,
       lowDetThreshold: 0.15,
       matchIouThreshold: 0.25,
       trackBufferFrames: 30,
-      minHitsToConfirm: 2
+      minHitsToConfirm: 2,
+      appearanceWeight: 0.0
     },
-    'precision-slow': {
+    'precision-slow-botsort': {
       confThreshold: 0.3,
       nmsIouThreshold: 0.55,
       detectionSkip: 1,
-      highDetThreshold: 0.45,
+      trackerType: 'BoT-SORT',
+      highDetThreshold: 0.6,
       lowDetThreshold: 0.1,
       matchIouThreshold: 0.2,
       trackBufferFrames: 45,
-      minHitsToConfirm: 1
+      minHitsToConfirm: 1,
+      appearanceWeight: 0.5
+    },
+    'forensic-reID-botsort': {
+      confThreshold: 0.25,
+      nmsIouThreshold: 0.6,
+      detectionSkip: 1,
+      trackerType: 'BoT-SORT',
+      highDetThreshold: 0.55,
+      lowDetThreshold: 0.05,
+      matchIouThreshold: 0.15,
+      trackBufferFrames: 60,
+      minHitsToConfirm: 1,
+      appearanceWeight: 0.7
     }
   };
 
-  const [activePreset, setActivePreset] = useState<string>('urban-balanced');
-  const [yoloConfig, setYoloConfig] = useState<YoloConfig>(trackingPresets['urban-balanced']);
+  const [activePreset, setActivePreset] = useState<string>('urban-balanced-bytetrack');
+  const [yoloConfig, setYoloConfig] = useState<YoloConfig>(trackingPresets['urban-balanced-bytetrack']);
 
   const frameCounterRef = useRef(0);
 
@@ -792,7 +816,7 @@ const App = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const tracksRef = useRef<Track[]>([]);
   const detectorRef = useRef<YoloDetector | null>(null);
-  const trackerRef = useRef<ByteTracker | null>(null);
+  const trackerRef = useRef<ByteTracker | BoTSORT | null>(null);
   const processingRef = useRef(false);
   const lastFrameTime = useRef(Date.now());
   const fpsRef = useRef(30);
@@ -852,14 +876,19 @@ const App = () => {
         await detector.load(import.meta.env.BASE_URL + 'upload/yolo11n_640.onnx');
         detectorRef.current = detector;
 
-        trackerRef.current = new ByteTracker();
-        console.log("YOLOv11 system initialized");
+        // Initialize tracker based on preset configuration
+        if (yoloConfig.trackerType === 'BoT-SORT') {
+          trackerRef.current = new BoTSORT();
+        } else {
+          trackerRef.current = new ByteTracker();
+        }
+        console.log(`YOLOv11 + ${yoloConfig.trackerType} system initialized`);
       } catch (e) {
         console.error("YOLO Load Error", e);
       }
     };
     loadModels();
-  }, []);
+  }, [yoloConfig.trackerType]);
 
   useEffect(() => {
     if (videoUrl && source === 'upload' && videoRef.current) {
@@ -1036,11 +1065,21 @@ const App = () => {
       trackerRef.current.highThresh = yoloConfig.highDetThreshold;
       trackerRef.current.matchThresh = yoloConfig.matchIouThreshold;
       trackerRef.current.trackBufferFrames = yoloConfig.trackBufferFrames;
+
+      // BoT-SORT specific configuration
+      if (trackerRef.current instanceof BoTSORT) {
+        trackerRef.current.appearanceWeight = yoloConfig.appearanceWeight;
+      }
     }
 
     let activeTracks: any[] = [];
     if (runInference && detectorRef.current) {
-      activeTracks = trackerRef.current.update(detections);
+      // Pass video frame to BoT-SORT for appearance feature extraction
+      if (trackerRef.current instanceof BoTSORT) {
+        activeTracks = trackerRef.current.update(detections, v);
+      } else {
+        activeTracks = trackerRef.current.update(detections);
+      }
 
       // Sync visual tracks with tracker output
       const newVisualTracks: Track[] = [];
@@ -1409,28 +1448,47 @@ const App = () => {
                 <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Presets de Tracking</span>
               </div>
               <div className="grid grid-cols-1 gap-2">
-                {Object.keys(trackingPresets).map(preset => (
-                  <button
-                    key={preset}
-                    onClick={() => {
-                      setActivePreset(preset);
-                      setYoloConfig(trackingPresets[preset]);
-                    }}
-                    className={`p-3 rounded-xl border transition-all ${activePreset === preset
-                      ? 'bg-cyan-500/20 border-cyan-500/50 text-cyan-400'
-                      : 'bg-slate-900/50 border-white/5 text-slate-400 hover:border-cyan-500/30'
-                      }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="text-[11px] font-bold uppercase tracking-tight">
-                        {preset === 'highway-fast' && '🏎️ Autopista (Rápido)'}
-                        {preset === 'urban-balanced' && '🏙️ Urbano (Equilibrado)'}
-                        {preset === 'precision-slow' && '🎯 Precisión (Lento)'}
-                      </span>
-                      {activePreset === preset && <Check size={14} />}
-                    </div>
-                  </button>
-                ))}
+                {Object.keys(trackingPresets).map(preset => {
+                  const config = trackingPresets[preset];
+                  const presetInfo = {
+                    'highway-fast-bytetrack': { icon: '🏎️', name: 'Autopista', desc: 'ByteTrack', color: 'amber' },
+                    'urban-balanced-bytetrack': { icon: '🏙️', name: 'Urbano', desc: 'ByteTrack', color: 'cyan' },
+                    'precision-slow-botsort': { icon: '🎯', name: 'Precisión', desc: 'BoT-SORT', color: 'purple' },
+                    'forensic-reID-botsort': { icon: '🔬', name: 'Forense Re-ID', desc: 'BoT-SORT', color: 'pink' }
+                  }[preset] || { icon: '⚙️', name: preset, desc: 'Custom', color: 'gray' };
+
+                  return (
+                    <button
+                      key={preset}
+                      onClick={() => {
+                        setActivePreset(preset);
+                        setYoloConfig(trackingPresets[preset]);
+                      }}
+                      className={`p-3 rounded-xl border transition-all ${activePreset === preset
+                        ? 'bg-cyan-500/20 border-cyan-500/50 text-cyan-400'
+                        : 'bg-slate-900/50 border-white/5 text-slate-400 hover:border-cyan-500/30'
+                        }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[16px]">{presetInfo.icon}</span>
+                          <div className="flex flex-col items-start">
+                            <span className="text-[11px] font-bold uppercase tracking-tight">
+                              {presetInfo.name}
+                            </span>
+                            <span className={`text-[8px] font-mono px-1.5 py-0.5 rounded ${config.trackerType === 'BoT-SORT'
+                              ? 'bg-purple-500/20 text-purple-400'
+                              : 'bg-cyan-500/20 text-cyan-400'
+                              }`}>
+                              {config.trackerType}
+                            </span>
+                          </div>
+                        </div>
+                        {activePreset === preset && <Check size={14} className="text-green-400" />}
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
@@ -1501,11 +1559,42 @@ const App = () => {
                 />
               </div>
 
-              {/* Info Card */}
-              <div className="mt-4 p-3 bg-slate-950/50 border border-white/5 rounded-xl">
-                <div className="text-[8px] font-mono text-slate-500 space-y-1">
+              {/* BoT-SORT Specific Controls */}
+              {yoloConfig.trackerType === 'BoT-SORT' && (
+                <div className="space-y-1 pt-2 border-t border-purple-500/20">
+                  <div className="flex justify-between text-[9px] font-bold text-purple-400 uppercase">
+                    <span>🎨 Appearance Weight (Re-ID)</span>
+                    <span className="text-purple-300">{yoloConfig.appearanceWeight.toFixed(2)}</span>
+                  </div>
+                  <input
+                    type="range" min="0.0" max="1.0" step="0.1"
+                    value={yoloConfig.appearanceWeight}
+                    onChange={(e) => setYoloConfig(c => ({ ...c, appearanceWeight: parseFloat(e.target.value) }))}
+                    className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-purple-500"
+                  />
+                  <p className="text-[7px] text-purple-400/60 mt-1">Mayor valor = más peso a similitud visual</p>
+                </div>
+              )}
+
+              {/* System Status Indicators */}
+              <div className="mt-4 p-3 bg-slate-950/50 border border-white/5 rounded-xl space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse"></div>
+                    <span className="text-[8px] font-mono text-green-400 uppercase tracking-wider">RADAR_ACTIVE</span>
+                  </div>
+                  <Signal size={10} className="text-green-400" />
+                </div>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse"></div>
+                    <span className="text-[8px] font-mono text-cyan-400 uppercase tracking-wider">AI_CORE_SYNC</span>
+                  </div>
+                  <Binary size={10} className="text-cyan-400" />
+                </div>
+                <div className="text-[8px] font-mono text-slate-500 space-y-1 pt-2 border-t border-white/5">
                   <div>Model: <span className="text-cyan-400">YOLOv11-Nano (ONNX/WASM)</span></div>
-                  <div>Tracker: <span className="text-purple-400">ByteTrack + Kalman Filter</span></div>
+                  <div>Tracker: <span className={yoloConfig.trackerType === 'BoT-SORT' ? 'text-purple-400' : 'text-cyan-400'}>{yoloConfig.trackerType}</span></div>
                   <div>Backend: <span className="text-green-400">WebAssembly SIMD</span></div>
                 </div>
               </div>
