@@ -1744,7 +1744,7 @@ const App = () => {
               {yoloConfig.trackerType === 'BoT-SORT' && (
                 <div className="space-y-1 pt-2 border-t border-purple-500/20">
                   <div className="flex justify-between text-[9px] font-bold text-purple-400 uppercase">
-                    <span>🎨 Appearance Weight (Re-ID)</span>
+                    <span>🎨 Appearance Weight</span>
                     <span className="text-purple-300">{yoloConfig.appearanceWeight.toFixed(2)}</span>
                   </div>
                   <input
@@ -1753,26 +1753,86 @@ const App = () => {
                     onChange={(e) => setYoloConfig(c => ({ ...c, appearanceWeight: parseFloat(e.target.value) }))}
                     className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-purple-500"
                   />
-                  <p className="text-[7px] text-purple-400/60 mt-1">Mayor valor = más peso a similitud visual</p>
+                  <p className="text-[7px] text-purple-400/60 mt-1">Visual similarity weight</p>
                 </div>
               )}
 
-              {/* System Status Indicators */}
+              {/* === System Sensors & Status Panel === */}
               <div className="mt-4 p-3 bg-slate-950/50 border border-white/5 rounded-xl space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse"></div>
-                    <span className="text-[8px] font-mono text-green-400 uppercase tracking-wider">RADAR_ACTIVE</span>
+                {/* Active Sensors */}
+                <div className="space-y-2">
+                  {/* RADAR (Detection System) */}
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className={`w-2 h-2 rounded-full ${detectorRef.current ? 'bg-green-400 animate-pulse' : 'bg-slate-700'}`}></div>
+                      <span className="text-[8px] font-mono text-green-400 uppercase tracking-wider">RADAR_ACTIVE</span>
+                    </div>
+                    <Signal size={10} className="text-green-400" />
                   </div>
-                  <Signal size={10} className="text-green-400" />
-                </div>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse"></div>
-                    <span className="text-[8px] font-mono text-cyan-400 uppercase tracking-wider">AI_CORE_SYNC</span>
+
+                  {/* AI Core Sync */}
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className={`w-2 h-2 rounded-full ${trackerRef.current ? 'bg-cyan-400 animate-pulse' : 'bg-slate-700'}`}></div>
+                      <span className="text-[8px] font-mono text-cyan-400 uppercase tracking-wider">AI_CORE_SYNC</span>
+                    </div>
+                    <Binary size={10} className="text-cyan-400" />
                   </div>
-                  <Binary size={10} className="text-cyan-400" />
+
+                  {/* Pose Estimation */}
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className={`w-2 h-2 rounded-full ${poseEstimationEnabled && detectorRef.current?.poseSession ? 'bg-purple-400 animate-pulse' : 'bg-slate-700'}`}></div>
+                      <span className={`text-[8px] font-mono uppercase tracking-wider ${poseEstimationEnabled && detectorRef.current?.poseSession ? 'text-purple-400' : 'text-slate-600'}`}>
+                        POSE_DETECTOR
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => setPoseEstimationEnabled(!poseEstimationEnabled)}
+                      className={`px-2 py-0.5 rounded text-[7px] font-bold transition-all ${poseEstimationEnabled ? 'bg-purple-500/30 text-purple-300' : 'bg-slate-800 text-slate-500'
+                        }`}
+                    >
+                      {poseEstimationEnabled ? 'ON' : 'OFF'}
+                    </button>
+                  </div>
+
+                  {/* Mesh Grid */}
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className={`w-2 h-2 rounded-full ${meshGridConfig.enabled ? 'bg-pink-400 animate-pulse' : 'bg-slate-700'}`}></div>
+                      <span className={`text-[8px] font-mono uppercase tracking-wider ${meshGridConfig.enabled ? 'text-pink-400' : 'text-slate-600'}`}>
+                        MESH_GRID
+                      </span>
+                    </div>
+                    <span className="text-[7px] text-slate-500 font-mono">{meshGridConfig.gridType.toUpperCase()}</span>
+                  </div>
+
+                  {/* Line Detection */}
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className={`w-2 h-2 rounded-full ${detectionLines.length > 0 ? 'bg-amber-400 animate-pulse' : 'bg-slate-700'}`}></div>
+                      <span className={`text-[8px] font-mono uppercase tracking-wider ${detectionLines.length > 0 ? 'text-amber-400' : 'text-slate-600'}`}>
+                        LINE_SENSORS
+                      </span>
+                    </div>
+                    <span className="text-[7px] text-amber-400 font-mono">{detectionLines.filter(l => !l.label.startsWith('GRID_') && !l.label.startsWith('PERSP_')).length}</span>
+                  </div>
+
+                  {/* Forensic Buffer */}
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className={`w-2 h-2 rounded-full ${tracksRef.current.some(t => t.snapshots && t.snapshots.length > 0) ? 'bg-orange-400 animate-pulse' : 'bg-slate-700'}`}></div>
+                      <span className={`text-[8px] font-mono uppercase tracking-wider ${tracksRef.current.some(t => t.snapshots && t.snapshots.length > 0) ? 'text-orange-400' : 'text-slate-600'}`}>
+                        FORENSIC_BUF
+                      </span>
+                    </div>
+                    <span className="text-[7px] text-orange-400 font-mono">
+                      {tracksRef.current.reduce((sum, t) => sum + (t.snapshots?.length || 0), 0)}
+                    </span>
+                  </div>
                 </div>
+
+                {/* System Info */}
                 <div className="text-[8px] font-mono text-slate-500 space-y-1 pt-2 border-t border-white/5">
                   <div>Model: <span className="text-cyan-400">YOLOv11-Nano (ONNX/WASM)</span></div>
                   <div>Tracker: <span className={yoloConfig.trackerType === 'BoT-SORT' ? 'text-purple-400' : 'text-cyan-400'}>{yoloConfig.trackerType}</span></div>
