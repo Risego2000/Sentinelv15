@@ -166,15 +166,15 @@ const App = () => {
       appearanceWeight: 0.0
     },
     'urban-balanced-bytetrack': {
-      confThreshold: 0.40, // STRICTER: Eliminate weak detections
-      nmsIouThreshold: 0.35, // AGGRESSIVE MERGE: Fuse overlapping boxes
+      confThreshold: 0.45, // High confidence only
+      nmsIouThreshold: 0.30,
       detectionSkip: 2,
       trackerType: 'ByteTrack',
-      highDetThreshold: 0.6, // Only strong detections start tracks
-      lowDetThreshold: 0.1,
-      matchIouThreshold: 0.2,
-      trackBufferFrames: 60,
-      minHitsToConfirm: 5, // Wait for stability before showing
+      highDetThreshold: 0.65,
+      lowDetThreshold: 0.2,
+      matchIouThreshold: 0.35, // Strict matching
+      trackBufferFrames: 15, // Short memory to kill ghosts fast (~0.6s)
+      minHitsToConfirm: 8, // High stability requirement before showing
       appearanceWeight: 0.0
     },
     'precision-slow-botsort': {
@@ -1499,6 +1499,9 @@ const App = () => {
       const lh = track.renderH;
       const lx = track.renderX - lw / 2;
       const ly = track.renderY - lh / 2;
+
+      // SAFETY CHECK: Ignore glitches (too big/small)
+      if (lw < 10 || lh < 10 || lw > 900 || lh > 900) return;
 
       const cpX = oX + (lx / 1000) * dW;
       const cpY = oY + (ly / 1000) * dH;
