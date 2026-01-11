@@ -803,8 +803,8 @@ const App = () => {
     const loadModels = async () => {
       try {
         const detector = new YoloDetector();
-        // Assuming user puts files in public/upload/
-        await detector.load('/upload/yolo11n_640.onnx');
+        // Use BASE_URL to support GitHub Pages subdirectory deployment
+        await detector.load(import.meta.env.BASE_URL + 'upload/yolo11n_640.onnx');
         detectorRef.current = detector;
 
         trackerRef.current = new ByteTracker();
