@@ -2146,7 +2146,7 @@ const App = () => {
                           <div className="flex items-center gap-3 flex-1">
                             <span className="text-xs">{item.icon}</span>
                             <div className="flex flex-col items-start gap-0.5">
-                              <span className="text-[12px] font-bold uppercase tracking-tighter">{item.label}</span>
+                              <span className="text-[11px] font-bold uppercase tracking-tight">{item.label}</span>
                               {(item as any).desc && (
                                 <span className="text-[9px] font-normal text-slate-600 normal-case italic leading-tight text-justify">{(item as any).desc}</span>
                               )}
@@ -2317,27 +2317,27 @@ const App = () => {
       </main>
 
       {/* REGISTRY SIDEBAR */}
-      <aside className="w-full lg:w-96 border-l border-white/5 flex flex-col z-50 bg-[#020617]/98 h-1/2 lg:h-full">
+      <aside className="w-full lg:w-96 border-l border-white/5 flex flex-col z-50 bg-[#020617]/98 h-1/2 lg:h-full backdrop-blur-2xl">
         <div className="p-8 border-b border-white/5 flex items-center justify-between bg-red-950/10">
-          <div className="flex items-center gap-4 text-red-500">
-            <div className="w-3 h-3 bg-red-600 rounded-full animate-pulse shadow-[0_0_10px_#dc2626]" />
-            <span className="text-[14px] font-black uppercase tracking-[0.4em] italic leading-none whitespace-nowrap">Evidence Storage</span>
+          <div className="flex flex-col">
+            <span className="text-xl font-black italic tracking-tighter text-red-500 uppercase leading-none">EVIDENCE</span>
+            <span className="text-[10px] font-black tracking-[0.5em] text-red-500/80 uppercase whitespace-nowrap">STORAGE & LOGS</span>
           </div>
-          <Scale size={20} className="text-slate-700" />
+          <Scale size={20} className="text-red-500/50" />
         </div>
 
-        <div className="flex-1 overflow-y-auto p-8 space-y-6 custom-scrollbar">
+        <div className="flex-1 overflow-y-auto p-6 space-y-4 custom-scrollbar">
           {logs.map(log => (
-            <div key={log.id} onClick={() => setSelectedLog(log)} className="p-6 bg-slate-900/40 border border-white/5 border-l-8 border-l-red-600 rounded-[45px] cursor-pointer hover:bg-slate-900 transition-all shadow-xl group animate-in slide-in-from-right-4">
-              <div className="relative aspect-video rounded-3xl overflow-hidden mb-5 border border-white/10 shadow-lg">
-                <img src={log.image} className="w-full h-full object-cover grayscale brightness-125 contrast-150" />
-                <div className="absolute top-4 right-4 bg-red-700 px-4 py-1 rounded-xl text-[12px] font-mono font-black text-white shadow-neon">{log.plate}</div>
+            <div key={log.id} onClick={() => setSelectedLog(log)} className="p-4 bg-slate-900/40 border border-white/5 border-l-4 border-l-red-600 rounded-2xl cursor-pointer hover:bg-slate-900 transition-all shadow-lg group hover:border-red-500/30">
+              <div className="relative aspect-video rounded-xl overflow-hidden mb-3 border border-white/10 shadow-lg">
+                <img src={log.image} className="w-full h-full object-cover grayscale brightness-110 contrast-125 group-hover:grayscale-0 transition-all duration-500" />
+                <div className="absolute top-2 right-2 bg-red-700/90 backdrop-blur px-2 py-0.5 rounded text-[10px] font-mono font-black text-white shadow-lg">{log.plate}</div>
               </div>
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-[12px] font-black text-white uppercase font-mono">{log.subType}</span>
-                <span className={`text-[9px] font-black px-3 py-1 rounded-full uppercase ${log.severity === 'muy-grave' ? 'bg-red-700 text-white shadow-[0_0_15px_#ef4444]' : 'bg-orange-600 text-black'}`}>{log.severity}</span>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[10px] font-bold text-white uppercase tracking-wider">{log.subType}</span>
+                <span className={`text-[8px] font-black px-2 py-0.5 rounded-full uppercase ${log.severity === 'muy-grave' ? 'bg-red-500/20 text-red-400 border border-red-500/30' : 'bg-orange-500/20 text-orange-400 border border-orange-500/30'}`}>{log.severity}</span>
               </div>
-              <p className="text-[11px] text-slate-400 italic line-clamp-3 leading-relaxed font-mono">"{log.description}"</p>
+              <p className="text-[9px] text-slate-500 font-mono line-clamp-2 leading-relaxed uppercase group-hover:text-slate-400">"{log.description}"</p>
             </div>
           ))}
         </div>
