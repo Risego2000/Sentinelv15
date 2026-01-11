@@ -1777,6 +1777,91 @@ const App = () => {
             </div>
           </div>
 
+          {/* === Automatic Mesh Grid Control === */}
+          <div className="space-y-3">
+            <h3 className="text-[11px] font-black uppercase text-slate-600 tracking-widest flex items-center gap-2 px-2">
+              <Layers size={12} className="text-purple-500" /> Sistema de Malla Automática
+            </h3>
+
+            <div className="bg-gradient-to-br from-purple-500/10 to-pink-500/10 border border-purple-500/20 rounded-2xl p-4 space-y-3">
+              {/* Toggle */}
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold text-slate-300 uppercase">Malla Activa</span>
+                <button
+                  onClick={() => setMeshGridConfig(c => ({ ...c, enabled: !c.enabled }))}
+                  className={`px-3 py-1 rounded-lg border text-[9px] font-bold transition-all ${meshGridConfig.enabled
+                      ? 'bg-purple-500/30 border-purple-500/50 text-purple-300'
+                      : 'bg-slate-900/50 border-white/10 text-slate-500'
+                    }`}
+                >
+                  {meshGridConfig.enabled ? '✓ ON' : 'OFF'}
+                </button>
+              </div>
+
+              {/* Grid Type */}
+              <div className="grid grid-cols-2 gap-2">
+                {(['horizontal', 'vertical', 'cross', 'perspective'] as const).map(type => (
+                  <button
+                    key={type}
+                    onClick={() => setMeshGridConfig(c => ({ ...c, gridType: type }))}
+                    className={`p-2 rounded-lg border text-[9px] font-bold uppercase transition-all ${meshGridConfig.gridType === type
+                        ? 'bg-purple-500/30 border-purple-500/50 text-purple-300'
+                        : 'bg-slate-900/30 border-white/10 text-slate-500 hover:border-purple-500/30'
+                      }`}
+                  >
+                    {type === 'horizontal' && '━ H'}
+                    {type === 'vertical' && '┃ V'}
+                    {type === 'cross' && '╋ Cross'}
+                    {type === 'perspective' && '📐 Persp'}
+                  </button>
+                ))}
+              </div>
+
+              {/* Spacing */}
+              <div className="space-y-1">
+                <div className="flex justify-between text-[9px] font-bold text-purple-400 uppercase">
+                  <span>Espaciado</span>
+                  <span className="text-purple-300">{meshGridConfig.spacing}px</span>
+                </div>
+                <input
+                  type="range" min="50" max="300" step="50"
+                  value={meshGridConfig.spacing}
+                  onChange={(e) => setMeshGridConfig(c => ({ ...c, spacing: parseInt(e.target.value) }))}
+                  className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-purple-500"
+                />
+              </div>
+
+              {/* Perspective Controls */}
+              {meshGridConfig.gridType === 'perspective' && (
+                <>
+                  <div className="space-y-1 pt-2 border-t border-purple-500/20">
+                    <div className="flex justify-between text-[9px] font-bold text-pink-400 uppercase">
+                      <span>Punto Fuga (Y)</span>
+                      <span className="text-pink-300">{meshGridConfig.perspectiveVanishingY}</span>
+                    </div>
+                    <input
+                      type="range" min="100" max="800" step="50"
+                      value={meshGridConfig.perspectiveVanishingY}
+                      onChange={(e) => setMeshGridConfig(c => ({ ...c, perspectiveVanishingY: parseInt(e.target.value) }))}
+                      className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-pink-500"
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <span className="text-[8px] text-slate-400 uppercase">Ángulos Adaptativos</span>
+                    <button
+                      onClick={() => setMeshGridConfig(c => ({ ...c, angleAdaptive: !c.angleAdaptive }))}
+                      className={`px-2 py-0.5 rounded text-[8px] font-bold ${meshGridConfig.angleAdaptive ? 'bg-pink-500/30 text-pink-300' : 'bg-slate-800 text-slate-500'
+                        }`}
+                    >
+                      {meshGridConfig.angleAdaptive ? 'ON' : 'OFF'}
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="text-[12px] font-black uppercase text-slate-500 tracking-widest flex items-center gap-2">
