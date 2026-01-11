@@ -35,6 +35,11 @@ interface Track {
   label: string;
   subType?: string;
   points: Point[];
+  // Visual Smoothing (EMA)
+  renderX: number;
+  renderY: number;
+  renderW: number;
+  renderH: number;
   lastSeen: number;
   lastSnapshotTime: number;
   color: string;
@@ -160,14 +165,14 @@ const App = () => {
       appearanceWeight: 0.0
     },
     'urban-balanced-bytetrack': {
-      confThreshold: 0.35,
+      confThreshold: 0.25,
       nmsIouThreshold: 0.5,
-      detectionSkip: 3,
+      detectionSkip: 2,
       trackerType: 'ByteTrack',
       highDetThreshold: 0.5,
-      lowDetThreshold: 0.15,
-      matchIouThreshold: 0.25,
-      trackBufferFrames: 30,
+      lowDetThreshold: 0.1,
+      matchIouThreshold: 0.2, // Increased tolerance for movement
+      trackBufferFrames: 90, // Extended memory for occlusion
       minHitsToConfirm: 2,
       appearanceWeight: 0.0
     },
@@ -1390,11 +1395,23 @@ const App = () => {
             missedFrames: 0,
             w: w_normalized,
             h: h_normalized,
+            // Initialize visual state
+            renderX: cx_normalized,
+            renderY: cy_normalized,
+            renderW: w_normalized,
+            renderH: h_normalized,
             isInfractor: false
           };
         }
 
         // Update State with normalized coordinates
+        // Update State with smooth EMA interpolation (Alpha 0.6 = fast but stable)
+        const alpha = 0.6;
+        vt.renderX = vt.renderX * alpha + cx_normalized * (1 - alpha);
+        vt.renderY = vt.renderY * alpha + cy_normalized * (1 - alpha);
+        vt.renderW = vt.renderW * alpha + w_normalized * (1 - alpha);
+        vt.renderH = vt.renderH * alpha + h_normalized * (1 - alpha);
+
         vt.lastSeen = now;
         vt.points.push({ x: cx_normalized, y: cy_normalized, time: now });
         vt.w = w_normalized;
@@ -1424,6 +1441,9 @@ const App = () => {
         if (t.points.length > 0) {
           const lastP = t.points[t.points.length - 1];
           // Use velocity from last update
+          // Smooth visual extrapolation
+          t.renderX += t.vx;
+          t.renderY += t.vy;
           t.points.push({ x: lastP.x + t.vx, y: lastP.y + t.vy, time: now });
           if (t.points.length > 50) t.points.shift();
         }
@@ -1439,10 +1459,11 @@ const App = () => {
       const lastP = track.points[track.points.length - 1];
 
       // HUD ELASTICITY: Calculate smoothed visual dimensions
-      const lw = track.w;
-      const lh = track.h;
-      const lx = lastP.x - lw / 2;
-      const ly = lastP.y - lh / 2;
+      // HUD ELASTICITY: Calculate smoothed visual dimensions from EMA state
+      const lw = track.renderW;
+      const lh = track.renderH;
+      const lx = track.renderX - lw / 2;
+      const ly = track.renderY - lh / 2;
 
       const cpX = oX + (lx / 1000) * dW;
       const cpY = oY + (ly / 1000) * dH;
