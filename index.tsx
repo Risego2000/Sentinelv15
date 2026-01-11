@@ -118,6 +118,7 @@ const App = () => {
   const [logs, setLogs] = useState<InfractionLog[]>([]);
   const [selectedLog, setSelectedLog] = useState<InfractionLog | null>(null);
   const [cumulativeDetections, setCumulativeDetections] = useState(0);
+  const processedIdsRef = useRef(new Set<number>()); // Unique Vehicle Counter
   const [cumulativeExpedientes, setCumulativeExpedientes] = useState(0);
 
   const [systemStats, setSystemStats] = useState({
@@ -128,7 +129,7 @@ const App = () => {
     gps: '40.6483° N, 3.4582° W'
   });
 
-  const [poseEstimationEnabled, setPoseEstimationEnabled] = useState(false);
+  const [poseEstimationEnabled, setPoseEstimationEnabled] = useState(true); // Auto-Start: Enabled by default
 
   // === YOLOv11 + Multi-Tracker Configuration ===
   interface YoloConfig {
@@ -165,15 +166,15 @@ const App = () => {
       appearanceWeight: 0.0
     },
     'urban-balanced-bytetrack': {
-      confThreshold: 0.25,
-      nmsIouThreshold: 0.5,
-      detectionSkip: 2,
+      confThreshold: 0.15, // Ultrarápido: captar todo
+      nmsIouThreshold: 0.45,
+      detectionSkip: 2, // Fluido pero ligero
       trackerType: 'ByteTrack',
-      highDetThreshold: 0.5,
-      lowDetThreshold: 0.1,
-      matchIouThreshold: 0.2, // Increased tolerance for movement
-      trackBufferFrames: 90, // Extended memory for occlusion
-      minHitsToConfirm: 2,
+      highDetThreshold: 0.4,
+      lowDetThreshold: 0.05,
+      matchIouThreshold: 0.15, // Tolerancia máxima
+      trackBufferFrames: 120, // Memoria larga (4 seg)
+      minHitsToConfirm: 1, // Instantáneo
       appearanceWeight: 0.0
     },
     'precision-slow-botsort': {
@@ -1438,14 +1439,47 @@ const App = () => {
     } else {
       // Smooth interpolation on skipped frames using Kalman-predicted velocity
       tracksRef.current.forEach(t => {
+
+
+        // 1. Basic Extrapolation for smoothness (Skipped Frames)
         if (t.points.length > 0) {
           const lastP = t.points[t.points.length - 1];
-          // Use velocity from last update
-          // Smooth visual extrapolation
           t.renderX += t.vx;
           t.renderY += t.vy;
           t.points.push({ x: lastP.x + t.vx, y: lastP.y + t.vy, time: now });
           if (t.points.length > 50) t.points.shift();
+        }
+
+        // 2. Advanced Velocity Calculation (3-METER LANE CALIBRATION)
+        // Perspective Model: 3m = ~150px at bottom (y=1000) -> ~40px at horizon (y=300)
+        if (t.points.length > 2) {
+          const p1 = t.points[t.points.length - 1];
+          const p2 = t.points[t.points.length - 3]; // Use wider delta for stability
+
+          // Perspective Calibration Function
+          // Linear interpolation of Pixels-Per-Meter based on Y position
+          const yFactor = Math.max(0, Math.min(1, (t.renderY - 300) / 700)); // 0 at horizon, 1 at bottom
+          const pixelsPerMeter = 40 + (yFactor * 110); // 40px/m to 150px/m range
+
+          const dx = p1.x - p2.x;
+          const dy = p1.y - p2.y;
+          const distPx = Math.sqrt(dx * dx + dy * dy);
+
+          // Speed in m/s -> km/h
+          const currentSpeed = (distPx / pixelsPerMeter) * (fpsRef.current / 2) * 3.6;
+
+          // Smooth speed adjustment (remove spikes)
+          t.velocity = (t.velocity || currentSpeed) * 0.8 + currentSpeed * 0.2;
+
+          // Update Kalman-like velocity guide
+          t.vx = (p1.x - p2.x) / 2;
+          t.vy = (p1.y - p2.y) / 2;
+        }
+
+        // 3. Unique Counting Logic
+        if (!processedIdsRef.current.has(t.id) && t.age > 10 && t.confidence > 0.4) {
+          processedIdsRef.current.add(t.id);
+          setCumulativeDetections(prev => prev + 1);
         }
       });
     }
