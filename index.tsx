@@ -907,9 +907,12 @@ const App = () => {
     }
   };
 
-  // Dynamic Neural Synthesis: System creates lines based on directives and config
+  // === AUTO-SYNTHESIS: Neural Line Generator ===
+  // Analyzes directives and automatically generates detection lines
   const parseDirectivesToLines = useCallback((text: string, baseLines: DetectionLine[]): DetectionLine[] => {
     const lines = [...baseLines];
+
+    // 1. Manual line syntax: [LINE: Y=500, TYPE=solid, LABEL=...]
     const regex = /\[LINE:\s*Y=(\d+),\s*TYPE=([^,\]\s]+),\s*LABEL=([^,\]]+)(?:,\s*INFRACTION=([^,\]\s]+))?\]/gi;
     let match;
     while ((match = regex.exec(text)) !== null) {
@@ -922,7 +925,96 @@ const App = () => {
         infractionType: (infraction?.trim() || null) as any
       });
     }
-    // Remove duplicates by Y and label to prevent flickering on every keystroke
+
+    // 2. INTELLIGENT AUTO-SYNTHESIS: Keyword detection
+    const lowerText = text.toLowerCase();
+    const hasLines = lines.length > 0;
+
+    // Define keywords and their corresponding line types
+    const synthRules = [
+      {
+        keywords: ['continua', 'línea continua', 'cruce de línea', 'line crossing'],
+        line: { y: 500, type: 'solid' as const, label: 'AUTO: LÍNEA CONTINUA', infraction: 'LINE_CROSSING' }
+      },
+      {
+        keywords: ['stop', 'detención', 'alto', 'parada obligatoria'],
+        line: { y: 400, type: 'stop' as const, label: 'AUTO: STOP', infraction: 'STOP_VIOLATION' }
+      },
+      {
+        keywords: ['peatones', 'paso de peatones', 'cebra', 'pedestrian'],
+        line: { y: 600, type: 'pedestrian' as const, label: 'AUTO: PASO PEATONES', infraction: 'PEDESTRIAN_ZONE' }
+      },
+      {
+        keywords: ['bus', 'carril bus', 'bus lane'],
+        line: { y: 450, type: 'bus-lane' as const, label: 'AUTO: CARRIL BUS', infraction: 'BUS_LANE_VIOLATION' }
+      },
+      {
+        keywords: ['carga', 'descarga', 'loading', 'zona de carga'],
+        line: { y: 550, type: 'loading-zone' as const, label: 'AUTO: ZONA CARGA', infraction: 'LOADING_ZONE' }
+      },
+      {
+        keywords: ['velocidad', 'radar', 'speed', 'exceso'],
+        line: { y: 350, type: 'speed-zone' as const, label: 'AUTO: CONTROL VELOCIDAD', infraction: 'SPEEDING' }
+      },
+      {
+        keywords: ['divisoria', 'carril', 'lane', 'divider'],
+        line: { y: 500, type: 'divider' as const, label: 'AUTO: DIVISORIA CARRIL', infraction: null as any }
+      },
+      {
+        keywords: ['incorporación', 'entrada', 'access', 'ramal'],
+        line: { y: 300, type: 'dashed' as const, label: 'AUTO: INCORPORACIÓN', infraction: null as any }
+      }
+    ];
+
+    // Apply synthesis rules based on detected keywords
+    synthRules.forEach((rule, idx) => {
+      const hasKeyword = rule.keywords.some(kw => lowerText.includes(kw));
+      if (hasKeyword) {
+        // Offset Y position slightly to avoid overlapping
+        const yOffset = idx * 50;
+        const synthesizedLine: DetectionLine = {
+          y: rule.line.y + yOffset,
+          type: rule.line.type,
+          direction: 'bidirectional',
+          label: rule.line.label,
+          infractionType: rule.line.infraction
+        };
+
+        // Only add if not already present (avoid duplicates)
+        const exists = lines.some(l =>
+          l.label === synthesizedLine.label ||
+          (Math.abs(l.y - synthesizedLine.y) < 30 && l.type === synthesizedLine.type)
+        );
+
+        if (!exists) {
+          lines.push(synthesizedLine);
+        }
+      }
+    });
+
+    // 3. Multi-lane detection: If directives mention multiple lanes/carriles
+    const laneMatches = text.match(/(\d+)\s*(carriles|lanes|vías)/gi);
+    if (laneMatches && laneMatches.length > 0) {
+      const numLanes = parseInt(laneMatches[0]);
+      if (numLanes >= 2 && numLanes <= 4) {
+        const spacing = 1000 / (numLanes + 1);
+        for (let i = 1; i <= numLanes; i++) {
+          const laneY = Math.floor(spacing * i);
+          const exists = lines.some(l => Math.abs(l.y - laneY) < 50);
+          if (!exists) {
+            lines.push({
+              y: laneY,
+              type: 'divider',
+              direction: 'bidirectional',
+              label: `AUTO: CARRIL ${i}`,
+              infractionType: null as any
+            });
+          }
+        }
+      }
+    }
+
+    // Remove duplicates by Y and label
     return lines.filter((v, i, a) => a.findIndex(t => t.y === v.y && t.label === v.label) === i);
   }, []);
 
@@ -969,6 +1061,17 @@ const App = () => {
       return next;
     });
   };
+
+  // === AUTO-SYNTHESIS TRIGGER ===
+  // Automatically re-synthesize lines when directives change (user edits text)
+  useEffect(() => {
+    if (!isManualMode && directives) {
+      const baseLines = combinedLinesForSync(selectedConfigs);
+      const synthesized = parseDirectivesToLines(directives, baseLines);
+      setDetectionLines(synthesized);
+      console.log(`🧠 AUTO-SYNTHESIS: Generated ${synthesized.filter(l => l.label.startsWith('AUTO:')).length} smart lines`);
+    }
+  }, [directives, selectedConfigs, isManualMode, parseDirectivesToLines, combinedLinesForSync]);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
