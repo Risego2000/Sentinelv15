@@ -2086,21 +2086,25 @@ const App = () => {
                       <button
                         key={item.id}
                         onClick={() => toggleProtocol(item.id)}
-                        className={`flex items-center justify-between p-3 rounded-2xl border transition-all ${selectedConfigs.includes(item.id)
-                          ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-400'
-                          : 'bg-slate-950/50 border-white/5 text-slate-500 hover:border-white/10'
+                        className={`flex items-center justify-between p-3 rounded-xl border transition-all group ${selectedConfigs.includes(item.id)
+                          ? 'bg-cyan-950/30 border-cyan-500/40 shadow-[0_0_15px_rgba(6,182,212,0.1)]'
+                          : 'bg-black/40 border-white/5 hover:bg-white/5 hover:border-white/10'
                           }`}
                       >
-                        <div className="flex items-center gap-3 flex-1">
-                          <span className="text-xs">{item.icon}</span>
-                          <div className="flex flex-col items-start gap-0.5">
-                            <span className="text-[11px] font-bold uppercase tracking-tight">{item.label}</span>
+                        <div className="flex items-center gap-3 flex-1 text-left">
+                          <span className={`text-xs filter ${selectedConfigs.includes(item.id) ? 'grayscale-0' : 'grayscale opacity-50'}`}>{item.icon}</span>
+                          <div className="flex flex-col gap-0.5">
+                            <span className={`text-[10px] font-black uppercase tracking-wider ${selectedConfigs.includes(item.id) ? 'text-cyan-400' : 'text-slate-400 group-hover:text-slate-300'}`}>
+                              {item.label}
+                            </span>
                             {(item as any).desc && (
-                              <span className="text-[9px] font-normal text-slate-600 normal-case italic leading-tight text-justify">{(item as any).desc}</span>
+                              <span className={`text-[8px] font-mono leading-tight ${selectedConfigs.includes(item.id) ? 'text-cyan-500/60' : 'text-slate-600'}`}>
+                                {(item as any).desc}
+                              </span>
                             )}
                           </div>
                         </div>
-                        {selectedConfigs.includes(item.id) && <Check size={12} className="text-cyan-500 shrink-0" />}
+                        {selectedConfigs.includes(item.id) && <Check size={10} className="text-cyan-400 shrink-0" />}
                       </button>
                     ))}
                   </div>
