@@ -166,15 +166,15 @@ const App = () => {
       appearanceWeight: 0.0
     },
     'urban-balanced-bytetrack': {
-      confThreshold: 0.15, // Ultrarápido: captar todo
-      nmsIouThreshold: 0.45,
-      detectionSkip: 2, // Fluido pero ligero
+      confThreshold: 0.40, // STRICTER: Eliminate weak detections
+      nmsIouThreshold: 0.35, // AGGRESSIVE MERGE: Fuse overlapping boxes
+      detectionSkip: 2,
       trackerType: 'ByteTrack',
-      highDetThreshold: 0.4,
-      lowDetThreshold: 0.05,
-      matchIouThreshold: 0.15, // Tolerancia máxima
-      trackBufferFrames: 120, // Memoria larga (4 seg)
-      minHitsToConfirm: 1, // Instantáneo
+      highDetThreshold: 0.6, // Only strong detections start tracks
+      lowDetThreshold: 0.1,
+      matchIouThreshold: 0.2,
+      trackBufferFrames: 60,
+      minHitsToConfirm: 5, // Wait for stability before showing
       appearanceWeight: 0.0
     },
     'precision-slow-botsort': {
@@ -1488,7 +1488,8 @@ const App = () => {
 
     // STEP 4: Render all tracks with premium forensic styling
     tracksRef.current.forEach(track => {
-      if (track.points.length === 0) return;
+      // NOISE FILTER: Only draw tracks that are stable and confirmed
+      if (track.points.length === 0 || track.age < 4 || track.confidence < 0.25) return;
 
       const lastP = track.points[track.points.length - 1];
 
