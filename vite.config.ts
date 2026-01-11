@@ -22,8 +22,8 @@ export default defineConfig(({ mode }) => {
 
           if (!fs.existsSync(destDir)) fs.mkdirSync(destDir);
 
-          // Copy all .wasm files
-          const files = fs.readdirSync(srcDir).filter(f => f.endsWith('.wasm'));
+          // Copy all .wasm and .mjs files
+          const files = fs.readdirSync(srcDir).filter(f => f.endsWith('.wasm') || f.endsWith('.mjs'));
           files.forEach(file => {
             fs.copyFileSync(path.join(srcDir, file), path.join(destDir, file));
             console.log(`[Vite] Copied ${file} to dist/`);
