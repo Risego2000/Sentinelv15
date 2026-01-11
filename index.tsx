@@ -895,31 +895,51 @@ const App = () => {
       const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_API_KEY });
       const systemInstruction = `Eres el AUDITOR FORENSE SUPREMO asignado a la Policía Local de Daganzo de Arriba.
       
-      ESPECIFICACIONES TÉCNICAS DEL SISTEMA (SENTINEL V15 - CAPA HÍBRIDA):
-      1. Capa Local (Local Edge): YOLOv11n (ONNX) + ByteTrack para seguimiento profesional de alta precisión.
-         - Tracker: ByteTrack (Kalman Filter + Hungarian Algorithm).
-         - Modelo: YOLO11-Nano (640px) optimizado para WebAssembly.
-         - Vectores de Estado: Posición y velocidad (vx, vy) suavizados por Filtro de Kalman.
-      2. Capa Remota (Cloud Judiciary): Tu rol es el juicio legal de la escena basado en la evidencia visual y las directivas.
-      3. Geometría Espacial: Carriles delimitados en eje X (0.0-1.0) y triggers en eje Y.
+      ESPECIFICACIONES TÉCNICAS DEL SISTEMA (SENTINEL V15 - ARQUITECTURA HÍBRIDA EDGE+CLOUD):
+      1. Capa Local (Edge Computing): YOLOv11n (ONNX) + ByteTrack para seguimiento de alta precisión en tiempo real.
+         - Modelo de Detección: YOLO11-Nano (640×640px) corriendo en WebAssembly SIMD
+         - Tracker: ByteTrack con Filtro de Kalman de 8 estados [cx, cy, área, altura, vx, vy, va, vh]
+         - Coincidencia: Algoritmo Húngaro con IoU threshold = ${yoloConfig.matchIouThreshold}
+         - Configuración Activa: ${activePreset} 
+           * Umbral Conf. YOLO: ${yoloConfig.confThreshold}
+           * Skip de Frames: ${yoloConfig.detectionSkip}
+           * Buffer de Track: ${yoloConfig.trackBufferFrames} frames
+           * High Det. Threshold: ${yoloConfig.highDetThreshold}
+         - Suavizado: Filtro de Kalman con constante de velocidad y corrección por medición
+      2. Capa Remota (Cloud Judiciary - TU ROL): Juicio legal definitivo de la escena basado en evidencia visual multiplexada y las directivas municipales de Daganzo.
+      3. Geometría Espacial: Sistema de coordenadas normalizado (0-1000) con líneas de detección en eje Y.
+      
+      DATOS DEL VEHÍCULO ANALIZADO:
+      - Track ID: ${track.id}
+      - Edad del Track: ${track.age} frames
+      - Confianza Media: ${track.confidence.toFixed(3)}
+      - Velocidad Estimada: ${Math.floor(track.velocity * 3.6)} km/h (basado en desplazamiento entre frames)
+      - Clase Detectada: ${track.label}
+      - Estado Infractor: ${track.isInfractor ? 'CONFIRMADO (cruce de línea detectado)' : 'En evaluación'}
       
       INSTRUCCIONES DE ANÁLISIS:
-      Analiza la ráfaga de imágenes para detectar infracciones de forma EXHAUSTIVA siguiendo estas directivas de Daganzo:
+      Analiza la ráfaga de imágenes forenses para determinar si existe infracción de tráfico siguiendo ESTRICTAMENTE estas directivas municipales de Daganzo:
       "${directives}"
       
-      SALIDA JSON OBLIGATORIA:
+      SALIDA JSON OBLIGATORIA (NO OTROS FORMATOS):
       {
         "infraction": boolean,
         "plate": "MATRÍCULA",
         "ocrConfidence": 0.95,
-        "description": "Relato técnico detallado de la infracción según directivas",
+        "description": "Relato técnico detallado de la infracción según directivas, incluyendo evidencia visual específica observada",
         "severity": "leve|grave|muy-grave",
-        "legalArticle": "Referencia al código de circulación",
+        "legalArticle": "Artículo específico del código de circulación español",
         "reasoning": ["Evidencia visual 1", "Evidencia visual 2", "Inferencia técnica"],
-        "vehicleType": "Descripción visual del vehículo",
-        "subType": "Categoría",
+        "vehicleType": "Descripción visual del vehículo (marca, modelo, color)",
+        "subType": "turismo|furgoneta|camión|moto|bus",
         "confidence": 0.98,
-        "telemetry": { "speedEstimated": "XX km/h", "maneuverType": "Giro/Cruce", "poseAlert": false }
+        "telemetry": { 
+          "speedEstimated": "${Math.floor(track.velocity * 3.6)} km/h", 
+          "trackAge": "${track.age} frames",
+          "yoloConfidence": "${track.confidence.toFixed(3)}",
+          "maneuverType": "Giro/Cruce/Adelantamiento/Recto",
+          "poseAlert": boolean
+        }
       }`;
 
       const videoClipPromise = captureVideoClip(10000);
@@ -1214,6 +1234,41 @@ const App = () => {
 
       ctx.globalAlpha = 1.0;
 
+      // === LINE CROSSING DETECTION (Infraction Trigger) ===
+      // Check if track crossed any detection line
+      if (track.points.length >= 2) {
+        const p1 = track.points[track.points.length - 2]; // Previous position
+        const p2 = track.points[track.points.length - 1]; // Current position
+
+        detectionLines.forEach(line => {
+          // Check if trajectory crossed the line (Y coordinate comparison in 0-1000 space)
+          const crossedLine = (p1.y < line.y && p2.y >= line.y) || (p1.y > line.y && p2.y <= line.y);
+
+          if (crossedLine && !track.isInfractor) {
+            // Determine infraction type based on line type
+            const infractionTypes = {
+              'solid': 'CRUCE_LINEA_CONTINUA',
+              'stop': 'NO_DETENCION_STOP',
+              'pedestrian': 'INVASION_PASO_PEATONES',
+              'bus-lane': 'CIRCULACION_CARRIL_BUS',
+              'loading-zone': 'ESTACIONAMIENTO_ZONA_CARGA',
+              'speed-zone': 'EXCESO_VELOCIDAD'
+            };
+
+            const infractionType = infractionTypes[line.type] || 'INFRACCION_GENERICA';
+
+            console.log(`🚨 INFRACCIÓN DETECTADA: Track ${track.id} cruzó línea "${line.label}" (${infractionType})`);
+
+            // Mark as infractor and trigger immediate audit if enough evidence collected
+            if (track.snapshots.length >= 5 && track.age > 15 && !track.analyzed) {
+              track.isInfractor = true;
+              // Trigger audit asynchronously to not block rendering
+              setTimeout(() => runNeuralAudit(track), 100);
+            }
+          }
+        });
+      }
+
       // Snapshot capture (high frequency forensic buffer)
       if (matchedTracks.has(track.id) && now - track.lastSnapshotTime > 150 && track.snapshots.length < 25 && track.confidence > 0.65) {
         const snap = document.createElement('canvas');
@@ -1225,8 +1280,8 @@ const App = () => {
         track.lastSnapshotTime = now;
       }
 
-      // Trigger forensic audit at age 50 for stable tracks
-      if (track.age === 50 && !track.analyzed && !processingRef.current && track.confidence > 0.8) {
+      // Fallback: Trigger forensic audit at age 50 for stable tracks (if no line crossing detected)
+      if (track.age === 50 && !track.analyzed && !processingRef.current && track.confidence > 0.8 && !track.isInfractor) {
         runNeuralAudit(track);
       }
     });
@@ -1304,9 +1359,9 @@ const App = () => {
     });
     ctx.restore();
 
-    // STEP 6: Cleanup - Remove tracks that are truly lost (increased persistence)
-    tracksRef.current = tracksRef.current.filter(t => t.missedFrames < Math.max(30, inferParams.persistence) && t.confidence > 0.01);
-  }, [isPlaying, detectionLines, inferParams]);
+    // STEP 6: Cleanup - Remove tracks that are truly lost
+    tracksRef.current = tracksRef.current.filter(t => t.missedFrames < Math.max(30, yoloConfig.trackBufferFrames) && t.confidence > 0.01);
+  }, [isPlaying, detectionLines, yoloConfig]);
 
   useEffect(() => {
     let handle: number;
@@ -1362,8 +1417,8 @@ const App = () => {
                       setYoloConfig(trackingPresets[preset]);
                     }}
                     className={`p-3 rounded-xl border transition-all ${activePreset === preset
-                        ? 'bg-cyan-500/20 border-cyan-500/50 text-cyan-400'
-                        : 'bg-slate-900/50 border-white/5 text-slate-400 hover:border-cyan-500/30'
+                      ? 'bg-cyan-500/20 border-cyan-500/50 text-cyan-400'
+                      : 'bg-slate-900/50 border-white/5 text-slate-400 hover:border-cyan-500/30'
                       }`}
                   >
                     <div className="flex items-center justify-between">
