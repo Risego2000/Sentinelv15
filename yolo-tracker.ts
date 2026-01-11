@@ -455,16 +455,20 @@ export class YoloDetector {
             });
             console.log("YOLOv11 Loaded", this.session.outputNames, this.session.inputNames);
 
-            // Load pose model if provided
+            // Load pose model if provided (Optional / Soft Fail)
             if (poseModelPath) {
-                this.poseSession = await ort.InferenceSession.create(poseModelPath, {
-                    executionProviders: ['wasm']
-                });
-                console.log("YOLOv11-Pose Loaded", this.poseSession.outputNames, this.poseSession.inputNames);
+                try {
+                    this.poseSession = await ort.InferenceSession.create(poseModelPath, {
+                        executionProviders: ['wasm']
+                    });
+                    console.log("YOLOv11-Pose Loaded", this.poseSession.outputNames, this.poseSession.inputNames);
+                } catch (poseError) {
+                    console.warn("Failed to load Pose model (continuing without pose features):", poseError);
+                }
             }
         } catch (e) {
-            console.error("Failed to load YOLO ONNX model", e);
-            throw e;
+            console.error("Failed to load YOLO ONNX detection model", e);
+            throw e; // This is critical, rethrow
         }
     }
 

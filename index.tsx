@@ -1136,7 +1136,7 @@ const App = () => {
         // Use BASE_URL to support GitHub Pages subdirectory deployment
         await detector.load(
           import.meta.env.BASE_URL + 'upload/yolo11n_640.onnx',
-          import.meta.env.BASE_URL + 'upload/yolo11n-pose.onnx' // Pose model
+          import.meta.env.BASE_URL + 'upload/yolo11n_pose.onnx' // Pose model
         );
         detectorRef.current = detector;
 
