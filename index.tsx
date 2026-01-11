@@ -202,14 +202,35 @@ const App = () => {
 
 
 
-  // Advanced Multi-Lane Detection Configuration with Infraction Zones
+  // Advanced Multi-Lane Detection Configuration with Angled Lines
   interface DetectionLine {
-    y: number;           // Position (0-1000)
+    y: number;           // Position (0-1000) - can be start Y for angled lines
+    x1?: number;         // Start X for angled lines (0-1000)
+    x2?: number;         // End X for angled lines (0-1000)  
+    y2?: number;         // End Y for angled lines (0-1000)
+    angle?: number;      // Line angle in degrees (0-360)
     type: 'solid' | 'dashed' | 'divider' | 'pedestrian' | 'stop' | 'loading-zone' | 'bus-lane' | 'speed-zone';
     direction: 'bidirectional' | 'northbound' | 'southbound';
     label: string;
     infractionType?: string; // Specific infraction this line detects
   }
+
+  // Automatic Mesh Grid Parameters
+  interface MeshGridConfig {
+    enabled: boolean;
+    gridType: 'horizontal' | 'vertical' | 'cross' | 'perspective';
+    spacing: number;     // Pixels between lines
+    angleAdaptive: boolean; // Auto-calculate angles based on perspective
+    perspectiveVanishingY: number; // Vanishing point for perspective (0-1000)
+  }
+
+  const [meshGridConfig, setMeshGridConfig] = useState<MeshGridConfig>({
+    enabled: false,
+    gridType: 'cross',
+    spacing: 200,
+    angleAdaptive: true,
+    perspectiveVanishingY: 300
+  });
 
   const [selectedConfigs, setSelectedConfigs] = useState<string[]>(['2-lanes-bidirectional']); // Multi-preset configuration
   const [isManualMode, setIsManualMode] = useState(false);
